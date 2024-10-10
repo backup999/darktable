@@ -41,7 +41,7 @@
 static dt_hash_t _opposed_parhash(dt_dev_pixelpipe_iop_t *piece)
 {
   dt_iop_buffer_dsc_t *dsc = &piece->pipe->dsc;
-  dt_iop_highlights_data_t *d = (dt_iop_highlights_data_t *)piece->data;
+  dt_iop_highlights_data_t *d = piece->data;
 
   dt_hash_t hash = dt_hash(DT_INITHASH, &dsc->rawprepare, sizeof(dsc->rawprepare));
   hash = dt_hash(hash, &dsc->temperature, sizeof(dsc->temperature));
@@ -100,7 +100,7 @@ static void _process_linear_opposed(
         const dt_iop_roi_t *const roi_out,
         const gboolean quality)
 {
-  dt_iop_highlights_data_t *d = (dt_iop_highlights_data_t *)piece->data;
+  dt_iop_highlights_data_t *d = piece->data;
   const float clipval = highlights_clip_magics[DT_IOP_HIGHLIGHTS_OPPOSED] * d->clip;
   const dt_iop_buffer_dsc_t *dsc = &piece->pipe->dsc;
   const gboolean wbon = dsc->temperature.enabled;
@@ -213,7 +213,7 @@ static float *_process_opposed(
         const gboolean keep,
         const gboolean quality)
 {
-  dt_iop_highlights_data_t *d = (dt_iop_highlights_data_t *)piece->data;
+  dt_iop_highlights_data_t *d = piece->data;
   const uint8_t(*const xtrans)[6] = (const uint8_t(*const)[6])piece->pipe->dsc.xtrans;
   const uint32_t filters = piece->pipe->dsc.filters;
   const float clipval = highlights_clip_magics[DT_IOP_HIGHLIGHTS_OPPOSED] * d->clip;
@@ -335,10 +335,10 @@ static float *_process_opposed(
 
       dt_print_pipe(DT_DEBUG_PIPE,
           "opposed chroma", piece->pipe, self, DT_DEVICE_CPU, roi_in, roi_out,
-          "red=%3.4f green=%3.4f blue=%3.4f hash=%" PRIx64 "%s%s\n",
+          "RGB %3.4f %3.4f %3.4f hash=%" PRIx64 "%s%s\n",
           chrominance[0], chrominance[1], chrominance[2],
           _opposed_parhash(piece),
-          piece->pipe->type == DT_DEV_PIXELPIPE_FULL ? ", saved to cache" : "",
+          piece->pipe->type == DT_DEV_PIXELPIPE_FULL ? ", saved" : "",
           img_oppclipped ? "" : ", unclipped");
     }
     dt_free_align(mask);
@@ -406,8 +406,8 @@ static cl_int process_opposed_cl(
         const dt_iop_roi_t *const roi_in,
         const dt_iop_roi_t *const roi_out)
 {
-  dt_iop_highlights_data_t *d = (dt_iop_highlights_data_t *)piece->data;
-  const dt_iop_highlights_global_data_t *gd = (dt_iop_highlights_global_data_t *)self->global_data;
+  dt_iop_highlights_data_t *d = piece->data;
+  const dt_iop_highlights_global_data_t *gd = self->global_data;
 
   const int devid = piece->pipe->devid;
   const uint32_t filters = piece->pipe->dsc.filters;
@@ -497,15 +497,12 @@ static cl_int process_opposed_cl(
     err = dt_opencl_write_buffer_to_device(devid, claccu, dev_accu, 0, accusize, TRUE);
     if(err != CL_SUCCESS) goto error;
 
-    size_t sizes[] = { iheight, 1, 1 };
-
-    dt_opencl_set_kernel_args(devid, gd->kernel_highlights_chroma, 0,
+    err = dt_opencl_enqueue_kernel_1d_args(devid, gd->kernel_highlights_chroma, iheight,
             CLARG(dev_in), CLARG(dev_outmask), CLARG(dev_accu),
             CLARG(roi_in->width), CLARG(roi_in->height),
             CLARG(msize), CLARG(mwidth),
             CLARG(filters), CLARG(dev_xtrans), CLARG(dev_clips), CLARG(dev_correction));
 
-    err = dt_opencl_enqueue_kernel_ndim_with_local(devid, gd->kernel_highlights_chroma, sizes, NULL, 1);
     if(err != CL_SUCCESS) goto error;
 
     err = dt_opencl_read_buffer_from_device(devid, claccu, dev_accu, 0, accusize, TRUE);
@@ -537,10 +534,10 @@ static cl_int process_opposed_cl(
 
     dt_print_pipe(DT_DEBUG_PIPE,
         "opposed chroma", piece->pipe, self, piece->pipe->devid, roi_in, roi_out,
-        "red=%3.4f green=%3.4f, blue=%3.4f hash=%" PRIx64 "%s%s\n",
+        "RGB %3.4f %3.4f %3.4f hash=%" PRIx64 "%s%s\n",
         chrominance[0], chrominance[1], chrominance[2],
         _opposed_parhash(piece),
-        piece->pipe->type == DT_DEV_PIXELPIPE_FULL ? ", saved to cache" : "",
+        piece->pipe->type == DT_DEV_PIXELPIPE_FULL ? ", saved" : "",
         img_oppclipped ? "" : ", unclipped");
   }
 

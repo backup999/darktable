@@ -135,7 +135,7 @@ static void _pop_undo(gpointer user_data,
   {
     for(GList *list = (GList *)data; list; list = g_list_next(list))
     {
-      dt_undo_tags_t *undotags = (dt_undo_tags_t *)list->data;
+      dt_undo_tags_t *undotags = list->data;
 
       GList *before = (action == DT_ACTION_UNDO) ? undotags->after : undotags->before;
       GList *after = (action == DT_ACTION_UNDO) ? undotags->before : undotags->after;
@@ -364,12 +364,14 @@ gboolean dt_tag_exists(const char *name, guint *tagid)
 
   if(rt == SQLITE_ROW)
   {
-    if(tagid != NULL) *tagid = sqlite3_column_int64(stmt, 0);
+    if(tagid != NULL)
+      *tagid = sqlite3_column_int64(stmt, 0);
     sqlite3_finalize(stmt);
     return TRUE;
   }
 
-  if(tagid != NULL) *tagid = -1;
+  if(tagid != NULL)
+    *tagid = -1;
   sqlite3_finalize(stmt);
   return FALSE;
 }
@@ -631,11 +633,47 @@ gboolean dt_tag_detach_by_string(const char *name,
                                  const gboolean undo_on,
                                  const gboolean group_on)
 {
-  if(!name || !name[0]) return FALSE;
-  guint tagid = 0;
-  if(!dt_tag_exists(name, &tagid)) return FALSE;
+  if(!name || !name[0])
+    return FALSE;
 
-  return dt_tag_detach(tagid, imgid, undo_on, group_on);
+  // We need a case sensitive search so we use the GLOB operator here
+
+  sqlite3_stmt *stmt;
+  DT_DEBUG_SQLITE3_PREPARE_V2
+    (dt_database_get(darktable.db),
+     "SELECT tagid"
+     " FROM main.tagged_images as ti, data.tags as t"
+     " WHERE ti.tagid = t.id"
+     "   AND t.name GLOB ?1",
+     -1, &stmt,
+     NULL);
+
+  char *n = g_strdup(name);
+
+  // Replace % by * for the GLOB operator
+
+  char *p = n;
+  while(*p)
+  {
+    if(*p == '%')
+      *p = '*';
+    p++;
+  }
+
+  DT_DEBUG_SQLITE3_BIND_TEXT(stmt, 1, n, -1, SQLITE_TRANSIENT);
+
+  gboolean res = FALSE;
+
+  while(sqlite3_step(stmt) == SQLITE_ROW)
+  {
+    res = TRUE;
+    const guint tagid = (guint)sqlite3_column_int(stmt, 0);
+    dt_tag_detach(tagid, imgid, undo_on, group_on);
+  }
+
+  g_free(n);
+
+  return res;
 }
 
 void dt_set_darktable_tags()
@@ -864,7 +902,7 @@ GList *dt_tag_get_list(const dt_imgid_t imgid)
 
   for(; taglist; taglist = g_list_next(taglist))
   {
-    dt_tag_t *t = (dt_tag_t *)taglist->data;
+    dt_tag_t *t = taglist->data;
     gchar *value = t->tag;
 
     gchar **pch = g_strsplit(value, "|", -1);
@@ -907,7 +945,7 @@ GList *dt_tag_get_hierarchical(const dt_imgid_t imgid)
 
   for(GList *tag_iter = taglist; tag_iter; tag_iter = g_list_next(tag_iter))
   {
-    dt_tag_t *t = (dt_tag_t *)tag_iter->data;
+    dt_tag_t *t = tag_iter->data;
     tags = g_list_prepend(tags, g_strdup(t->tag));
   }
 
@@ -989,13 +1027,13 @@ GList *dt_tag_get_list_export(const dt_imgid_t imgid,
   {
     for(GList *tagt = sorted_tags; tagt; tagt = g_list_next(tagt))
     {
-      dt_tag_t *t = (dt_tag_t *)sorted_tags->data;
+      dt_tag_t *t = sorted_tags->data;
       t->flags &= ~DT_TF_PRIVATE;
     }
   }
   for(; sorted_tags; sorted_tags = g_list_next(sorted_tags))
   {
-    dt_tag_t *t = (dt_tag_t *)sorted_tags->data;
+    dt_tag_t *t = sorted_tags->data;
     if((export_private_tags || !(t->flags & DT_TF_PRIVATE))
         && !(t->flags & DT_TF_CATEGORY))
     {
@@ -1064,7 +1102,7 @@ GList *dt_tag_get_hierarchical_export(const dt_imgid_t imgid,
 
   for(GList *tag_iter = taglist; tag_iter; tag_iter = g_list_next(tag_iter))
   {
-    dt_tag_t *t = (dt_tag_t *)tag_iter->data;
+    dt_tag_t *t = tag_iter->data;
     if(export_private_tags || !(t->flags & DT_TF_PRIVATE))
     {
       tags = g_list_prepend(tags, g_strdup(t->tag));
@@ -1171,7 +1209,7 @@ uint32_t dt_tag_get_suggestions(GList **result)
      "  LEFT JOIN ("
      "    SELECT tagid, COUNT(imgid) AS count2"
      "    FROM main.tagged_images"
-     "    WHERE imgid IN main.selected_images"
+     "    WHERE imgid IN (SELECT imgid FROM main.selected_images)"
      "    GROUP BY tagid) AS at"
      "  ON at.tagid = S.tagid"
      "  WHERE S.tagid NOT IN memory.darktable_tags"

@@ -314,10 +314,8 @@ int legacy_params(dt_iop_module_t *self,
       gboolean clip;
     } dt_iop_channelmixer_rgb_params_v1_t;
 
-    const dt_iop_channelmixer_rgb_params_v1_t *o =
-      (dt_iop_channelmixer_rgb_params_v1_t *)old_params;
-    dt_iop_channelmixer_rgb_params_v3_t *n =
-      (dt_iop_channelmixer_rgb_params_v3_t *)
+    const dt_iop_channelmixer_rgb_params_v1_t *o = old_params;
+    dt_iop_channelmixer_rgb_params_v3_t *n = 
       malloc(sizeof(dt_iop_channelmixer_rgb_params_v3_t));
 
     // V1 and V2 use the same param structure but the normalize_grey
@@ -365,10 +363,8 @@ int legacy_params(dt_iop_module_t *self,
       gboolean clip;
     } dt_iop_channelmixer_rgb_params_v2_t;
 
-    const dt_iop_channelmixer_rgb_params_v2_t *o =
-      (dt_iop_channelmixer_rgb_params_v2_t *)old_params;
-    dt_iop_channelmixer_rgb_params_v3_t *n =
-      (dt_iop_channelmixer_rgb_params_v3_t *)
+    const dt_iop_channelmixer_rgb_params_v2_t *o = old_params;
+    dt_iop_channelmixer_rgb_params_v3_t *n = 
       malloc(sizeof(dt_iop_channelmixer_rgb_params_v3_t));
 
     memcpy(n, o, sizeof(dt_iop_channelmixer_rgb_params_v2_t));
@@ -469,8 +465,8 @@ void init_presets(dt_iop_module_so_t *self)
 
   // film emulations
 
-  /* These emulations are built using spectral sensitivies provided by
-  * film manufacturers for tungsten light, corrected in spectral
+  /* These emulations are built using spectral sensitivities provided
+  * by film manufacturers for tungsten light, corrected in spectral
   * domain for D50 illuminant, and integrated in spectral space
   * against CIE 2° 1931 XYZ color matching functions in the Python lib
   * Colour, with the following code :
@@ -596,6 +592,17 @@ void init_presets(dt_iop_module_so_t *self)
                              self->version(), &p, sizeof(p), 1, DEVELOP_BLEND_CS_RGB_SCENE);
 }
 
+static gboolean _area_mapping_active(const dt_iop_channelmixer_rgb_gui_data_t *g)
+{
+  return g && g->spot_mode && dt_bauhaus_combobox_get(g->spot_mode) != DT_SPOT_MODE_MEASURE &&
+    ((g->lightness_spot && dt_bauhaus_slider_get_val(g->lightness_spot) != 50.0f) ||
+     (g->chroma_spot && dt_bauhaus_slider_get_val(g->chroma_spot) != 0.0f));
+}
+
+static const char *_area_mapping_section_text(const dt_iop_channelmixer_rgb_gui_data_t *g)
+{
+  return _area_mapping_active(g) ? _("area color mapping (active)") : _("area color mapping");
+}
 
 static gboolean _get_white_balance_coeff(struct dt_iop_module_t *self,
                                          dt_aligned_pixel_t custom_wb)
@@ -1161,8 +1168,8 @@ static void _declare_cat_on_pipe(struct dt_iop_module_t *self, const gboolean pr
 {
   // Avertise in dev->chroma that we are doing chromatic adaptation here
   // preset = TRUE allows to capture the CAT a priori at init time
-  const dt_iop_channelmixer_rgb_params_t *p = (dt_iop_channelmixer_rgb_params_t *)self->params;
-  const dt_iop_channelmixer_rgb_gui_data_t *g = (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
+  const dt_iop_channelmixer_rgb_params_t *p = self->params;
+  const dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
   if(!g) return;
 
   dt_dev_chroma_t *chr = &self->dev->chroma;
@@ -1973,10 +1980,8 @@ static void _validate_color_checker(const float *const restrict in,
 
 static void _set_trouble_messages(struct dt_iop_module_t *self)
 {
-  const dt_iop_channelmixer_rgb_params_t *p =
-    (dt_iop_channelmixer_rgb_params_t *)self->params;
-  const dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
+  const dt_iop_channelmixer_rgb_params_t *p = self->params;
+  const dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
   const dt_develop_t *dev = self->dev;
   const dt_dev_chroma_t *chr = &dev->chroma;
 
@@ -2115,13 +2120,12 @@ void process(struct dt_iop_module_t *self,
              const dt_iop_roi_t *const roi_in,
              const dt_iop_roi_t *const roi_out)
 {
-  dt_iop_channelmixer_rbg_data_t *data = (dt_iop_channelmixer_rbg_data_t *)piece->data;
+  dt_iop_channelmixer_rbg_data_t *data = piece->data;
   const struct dt_iop_order_iccprofile_info_t *const work_profile =
     dt_ioppr_get_pipe_current_profile_info(self, piece->pipe);
   const struct dt_iop_order_iccprofile_info_t *const input_profile =
     dt_ioppr_get_pipe_input_profile_info(piece->pipe);
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
 
   if(!dt_iop_have_required_input_format(4 /*we need full-color pixels*/,
                                         self, piece->colors,
@@ -2297,9 +2301,8 @@ int process_cl(struct dt_iop_module_t *self,
                const dt_iop_roi_t *const roi_in,
                const dt_iop_roi_t *const roi_out)
 {
-  dt_iop_channelmixer_rbg_data_t *const d = (dt_iop_channelmixer_rbg_data_t *)piece->data;
-  dt_iop_channelmixer_rgb_global_data_t *const gd =
-    (dt_iop_channelmixer_rgb_global_data_t *)self->global_data;
+  dt_iop_channelmixer_rbg_data_t *const d = piece->data;
+  dt_iop_channelmixer_rgb_global_data_t *const gd = self->global_data;
 
   const struct dt_iop_order_iccprofile_info_t *const work_profile =
     dt_ioppr_get_pipe_current_profile_info(self, piece->pipe);
@@ -2426,8 +2429,7 @@ void init_global(dt_iop_module_so_t *module)
 
 void cleanup_global(dt_iop_module_so_t *module)
 {
-  dt_iop_channelmixer_rgb_global_data_t *gd =
-    (dt_iop_channelmixer_rgb_global_data_t *)module->data;
+  dt_iop_channelmixer_rgb_global_data_t *gd = module->data;
   dt_opencl_free_kernel(gd->kernel_channelmixer_rgb_cat16);
   dt_opencl_free_kernel(gd->kernel_channelmixer_rgb_bradford_full);
   dt_opencl_free_kernel(gd->kernel_channelmixer_rgb_bradford_linear);
@@ -2508,8 +2510,7 @@ int mouse_moved(dt_iop_module_t *self,
 {
   if(!self->enabled) return 0;
 
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
   if(g == NULL || !g->is_profiling_started) return 0;
   if(g->box[0].x == -1.0f || g->box[1].y == -1.0f) return 0;
 
@@ -2584,8 +2585,7 @@ int button_pressed(dt_iop_module_t *self,
 {
   if(!self->enabled) return 0;
 
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
 
   if(g == NULL || !g->is_profiling_started) return 0;
 
@@ -2631,8 +2631,7 @@ int button_released(dt_iop_module_t *self,
 {
   if(!self->enabled) return 0;
 
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
 
   if(g == NULL || !g->is_profiling_started) return 0;
   if(g->box[0].x == -1.0f || g->box[1].y == -1.0f) return 0;
@@ -2666,8 +2665,7 @@ void gui_post_expose(dt_iop_module_t *self,
     dt_ioppr_get_pipe_output_profile_info(self->dev->full.pipe);
   if(work_profile == NULL) return;
 
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
   if(!g->is_profiling_started) return;
 
   const gboolean showhandle = dt_iop_canvas_not_sensitive(darktable.develop) == FALSE;
@@ -2813,12 +2811,10 @@ void gui_post_expose(dt_iop_module_t *self,
   }
 }
 
-static void _optimize_changed_callback(GtkWidget *widget, gpointer user_data)
+static void _optimize_changed_callback(GtkWidget *widget, dt_iop_module_t *self)
 {
   if(darktable.gui->reset) return;
-  dt_iop_module_t *self = (dt_iop_module_t *)user_data;
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
 
   const int i = dt_bauhaus_combobox_get(widget);
   dt_conf_set_int("darkroom/modules/channelmixerrgb/optimization", i);
@@ -2828,12 +2824,10 @@ static void _optimize_changed_callback(GtkWidget *widget, gpointer user_data)
   dt_iop_gui_leave_critical_section(self);
 }
 
-static void _checker_changed_callback(GtkWidget *widget, gpointer user_data)
+static void _checker_changed_callback(GtkWidget *widget, dt_iop_module_t *self)
 {
   if(darktable.gui->reset) return;
-  dt_iop_module_t *self = (dt_iop_module_t *)user_data;
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
 
   const int i = dt_bauhaus_combobox_get(widget);
   dt_conf_set_int("darkroom/modules/channelmixerrgb/colorchecker", i);
@@ -2850,12 +2844,10 @@ static void _checker_changed_callback(GtkWidget *widget, gpointer user_data)
   dt_control_queue_redraw_center();
 }
 
-static void _safety_changed_callback(GtkWidget *widget, gpointer user_data)
+static void _safety_changed_callback(GtkWidget *widget, dt_iop_module_t *self)
 {
   if(darktable.gui->reset) return;
-  dt_iop_module_t *self = (dt_iop_module_t *)user_data;
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
 
   dt_iop_gui_enter_critical_section(self);
   g->safety_margin = dt_bauhaus_slider_get(widget);
@@ -2875,8 +2867,7 @@ static void _start_profiling_callback(GtkWidget *togglebutton, dt_iop_module_t *
   float wd, ht;
   if(!dt_dev_get_preview_size(self->dev, &wd, &ht)) return;
 
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
   g->is_profiling_started = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(g->cs.toggle));
 
   // init bounding box
@@ -2889,12 +2880,10 @@ static void _start_profiling_callback(GtkWidget *togglebutton, dt_iop_module_t *
 
 static void _run_profile_callback(GtkWidget *widget,
                                  GdkEventButton *event,
-                                 gpointer user_data)
+                                 dt_iop_module_t *self)
 {
   if(darktable.gui->reset) return;
-  dt_iop_module_t *self = (dt_iop_module_t *)user_data;
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
 
   dt_iop_gui_enter_critical_section(self);
   g->run_profile = TRUE;
@@ -2905,12 +2894,10 @@ static void _run_profile_callback(GtkWidget *widget,
 
 static void _run_validation_callback(GtkWidget *widget,
                                     GdkEventButton *event,
-                                    gpointer user_data)
+                                    dt_iop_module_t *self)
 {
   if(darktable.gui->reset) return;
-  dt_iop_module_t *self = (dt_iop_module_t *)user_data;
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
 
   dt_iop_gui_enter_critical_section(self);
   g->run_validation = TRUE;
@@ -2921,14 +2908,11 @@ static void _run_validation_callback(GtkWidget *widget,
 
 static void _commit_profile_callback(GtkWidget *widget,
                                      GdkEventButton *event,
-                                     gpointer user_data)
+                                     dt_iop_module_t *self)
 {
   if(darktable.gui->reset) return;
-  dt_iop_module_t *self = (dt_iop_module_t *)user_data;
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
-  dt_iop_channelmixer_rgb_params_t *p =
-    (dt_iop_channelmixer_rgb_params_t *)self->params;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
+  dt_iop_channelmixer_rgb_params_t *p = self->params;
 
   if(!g->profile_ready) return;
 
@@ -2982,17 +2966,14 @@ static void _commit_profile_callback(GtkWidget *widget,
   dt_dev_add_history_item(darktable.develop, self, TRUE);
 }
 
-static void _develop_ui_pipe_finished_callback(gpointer instance, gpointer user_data)
+static void _develop_ui_pipe_finished_callback(gpointer instance, dt_iop_module_t *self)
 {
-  dt_iop_module_t *self = (dt_iop_module_t *)user_data;
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
 
   if(g == NULL) return;
 
 #ifdef AI_ACTIVATED
-  dt_iop_channelmixer_rgb_params_t *p =
-    (dt_iop_channelmixer_rgb_params_t *)self->params;
+  dt_iop_channelmixer_rgb_params_t *p = self->params;
 
   if(p->illuminant != DT_ILLUMINANT_DETECT_EDGES
      && p->illuminant != DT_ILLUMINANT_DETECT_SURFACES)
@@ -3036,11 +3017,9 @@ static void _develop_ui_pipe_finished_callback(gpointer instance, gpointer user_
 #endif
 }
 
-static void _preview_pipe_finished_callback(gpointer instance, gpointer user_data)
+static void _preview_pipe_finished_callback(gpointer instance, dt_iop_module_t *self)
 {
-  dt_iop_module_t *self = (dt_iop_module_t *)user_data;
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
 
   dt_iop_gui_enter_critical_section(self);
   gtk_label_set_markup(GTK_LABEL(g->label_delta_E), g->delta_E_label_text);
@@ -3054,9 +3033,8 @@ void commit_params(struct dt_iop_module_t *self,
                    dt_dev_pixelpipe_iop_t *piece)
 {
   dt_iop_channelmixer_rgb_params_t *p = (dt_iop_channelmixer_rgb_params_t *)p1;
-  dt_iop_channelmixer_rbg_data_t *d = (dt_iop_channelmixer_rbg_data_t *)piece->data;
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
+  dt_iop_channelmixer_rbg_data_t *d = piece->data;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
 
   d->version = p->version;
 
@@ -3178,10 +3156,8 @@ void commit_params(struct dt_iop_module_t *self,
 
 static void _update_illuminants(dt_iop_module_t *self)
 {
-  dt_iop_channelmixer_rgb_params_t *p =
-    (dt_iop_channelmixer_rgb_params_t *)self->params;
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
+  dt_iop_channelmixer_rgb_params_t *p = self->params;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
 
   if(p->adaptation == DT_ADAPTATION_RGB
      || p->adaptation == DT_ADAPTATION_LAST)
@@ -3336,10 +3312,8 @@ static void _update_illuminants(dt_iop_module_t *self)
 static void _update_xy_color(dt_iop_module_t *self)
 {
   // update the fill background color of x, y sliders
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
-  dt_iop_channelmixer_rgb_params_t *p =
-    (dt_iop_channelmixer_rgb_params_t *)self->params;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
+  dt_iop_channelmixer_rgb_params_t *p = self->params;
 
   // Varies x in range around current y param
   for(int i = 0; i < DT_BAUHAUS_SLIDER_MAX_STOPS; i++)
@@ -3377,8 +3351,7 @@ static void _update_xy_color(dt_iop_module_t *self)
 static void _paint_hue(dt_iop_module_t *self)
 {
   // update the fill background color of LCh sliders
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
 
   const float hue = dt_bauhaus_slider_get(g->hue_spot);
 
@@ -3484,7 +3457,7 @@ static void _update_RGB_colors(dt_iop_module_t *self,
                                GtkWidget *w_b)
 {
   // update the fill background color of x, y sliders
-  dt_iop_channelmixer_rgb_params_t *p = (dt_iop_channelmixer_rgb_params_t *)self->params;
+  dt_iop_channelmixer_rgb_params_t *p = self->params;
   const struct dt_iop_order_iccprofile_info_t *const work_profile =
     dt_ioppr_get_pipe_current_profile_info(self, self->dev->full.pipe);
 
@@ -3519,8 +3492,7 @@ static void _update_RGB_colors(dt_iop_module_t *self,
 
 static void _paint_temperature_background(struct dt_iop_module_t *self)
 {
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
 
   const float temp_range = TEMP_MAX - TEMP_MIN;
 
@@ -3539,19 +3511,16 @@ static void _paint_temperature_background(struct dt_iop_module_t *self)
 
 static void _update_illuminant_color(dt_iop_module_t *self)
 {
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
   gtk_widget_queue_draw(g->illum_color);
   _update_xy_color(self);
 }
 
 static gboolean _illuminant_color_draw(GtkWidget *widget,
                                        cairo_t *crf,
-                                       gpointer user_data)
+                                       dt_iop_module_t *self)
 {
-  dt_iop_module_t *self = (dt_iop_module_t *)user_data;
-  dt_iop_channelmixer_rgb_params_t *p =
-    (dt_iop_channelmixer_rgb_params_t *)self->params;
+  dt_iop_channelmixer_rgb_params_t *p = self->params;
 
   // Init
   GtkAllocation allocation;
@@ -3592,11 +3561,9 @@ static gboolean _illuminant_color_draw(GtkWidget *widget,
 
 static gboolean _target_color_draw(GtkWidget *widget,
                                   cairo_t *crf,
-                                  gpointer user_data)
+                                  dt_iop_module_t *self)
 {
-  dt_iop_module_t *self = (dt_iop_module_t *)user_data;
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
 
   // Init
   GtkAllocation allocation;
@@ -3639,11 +3606,9 @@ static gboolean _target_color_draw(GtkWidget *widget,
 
 static gboolean _origin_color_draw(GtkWidget *widget,
                                   cairo_t *crf,
-                                  gpointer user_data)
+                                  dt_iop_module_t *self)
 {
-  dt_iop_module_t *self = (dt_iop_module_t *)user_data;
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
 
   // Init
   GtkAllocation allocation;
@@ -3674,10 +3639,8 @@ static gboolean _origin_color_draw(GtkWidget *widget,
 
 static void _update_approx_cct(dt_iop_module_t *self)
 {
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
-  dt_iop_channelmixer_rgb_params_t *p =
-    (dt_iop_channelmixer_rgb_params_t *)self->params;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
+  dt_iop_channelmixer_rgb_params_t *p = self->params;
 
   float x = p->x;
   float y = p->y;
@@ -3737,14 +3700,11 @@ static void _update_approx_cct(dt_iop_module_t *self)
 
 
 static void _illum_xy_callback(GtkWidget *slider,
-                              gpointer user_data)
+                              dt_iop_module_t *self)
 {
-  dt_iop_module_t *self = (dt_iop_module_t *)user_data;
   if(darktable.gui->reset) return;
-  dt_iop_channelmixer_rgb_params_t *p =
-    (dt_iop_channelmixer_rgb_params_t *)self->params;
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
+  dt_iop_channelmixer_rgb_params_t *p = self->params;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
 
   dt_aligned_pixel_t Lch = { 0 };
   Lch[0] = 100.f;
@@ -3789,8 +3749,7 @@ void cleanup_pipe(struct dt_iop_module_t *self,
 
 void gui_reset(dt_iop_module_t *self)
 {
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
   g->is_profiling_started = FALSE;
   dt_iop_color_picker_reset(self, TRUE);
   gui_changed(self, NULL, NULL);
@@ -3799,10 +3758,8 @@ void gui_reset(dt_iop_module_t *self)
 void gui_update(struct dt_iop_module_t *self)
 {
   dt_iop_module_t *module = (dt_iop_module_t *)self;
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
-  dt_iop_channelmixer_rgb_params_t *p =
-    (dt_iop_channelmixer_rgb_params_t *)module->params;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
+  dt_iop_channelmixer_rgb_params_t *p = module->params;
 
   dt_iop_color_picker_reset(self, TRUE);
 
@@ -3872,6 +3829,7 @@ void gui_update(struct dt_iop_module_t *self)
   g->last_bb_temperature = d->temperature;
 
   dt_gui_hide_collapsible_section(&g->cs);
+  dt_gui_collapsible_section_set_label(&g->csspot, _area_mapping_section_text(g));
   dt_gui_update_collapsible_section(&g->csspot);
 
   g->spot_RGB[0] = 0.f;
@@ -3886,15 +3844,13 @@ void init(dt_iop_module_t *module)
 {
   dt_iop_default_init(module);
 
-  dt_iop_channelmixer_rgb_params_t *d =
-    (dt_iop_channelmixer_rgb_params_t *)module->default_params;
+  dt_iop_channelmixer_rgb_params_t *d = module->default_params;
   d->red[0] = d->green[1] = d->blue[2] = 1.0;
 }
 
 void reload_defaults(dt_iop_module_t *module)
 {
-  dt_iop_channelmixer_rgb_params_t *d =
-    (dt_iop_channelmixer_rgb_params_t *)module->default_params;
+  dt_iop_channelmixer_rgb_params_t *d = module->default_params;
 
   d->x = module->get_f("x")->Float.Default;
   d->y = module->get_f("y")->Float.Default;
@@ -3938,8 +3894,7 @@ void reload_defaults(dt_iop_module_t *module)
     }
   }
 
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)module->gui_data;
+  dt_iop_channelmixer_rgb_gui_data_t *g = module->gui_data;
   if(g)
   {
     const dt_aligned_pixel_t xyY = { d->x, d->y, 1.f };
@@ -3981,8 +3936,7 @@ static void _spot_settings_changed_callback(GtkWidget *slider,
 {
   if(darktable.gui->reset) return;
 
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
 
   dt_aligned_pixel_t Lch_target = { 0.f };
 
@@ -4000,6 +3954,9 @@ static void _spot_settings_changed_callback(GtkWidget *slider,
   dt_conf_set_float("darkroom/modules/channelmixerrgb/hue", Lch_target[2] * 360.f);
   dt_conf_set_bool("darkroom/modules/channelmixerrgb/use_mixing", use_mixing);
 
+  // update the "active" flag in the GUI
+  dt_gui_collapsible_section_set_label(&g->csspot, _area_mapping_section_text(g));
+
   ++darktable.gui->reset;
   _paint_hue(self);
   --darktable.gui->reset;
@@ -4016,10 +3973,8 @@ void gui_changed(dt_iop_module_t *self,
                  GtkWidget *w,
                  void *previous)
 {
-  dt_iop_channelmixer_rgb_params_t *p =
-    (dt_iop_channelmixer_rgb_params_t *)self->params;
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
+  dt_iop_channelmixer_rgb_params_t *p = self->params;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
 
   if(w == g->illuminant)
   {
@@ -4200,10 +4155,8 @@ void gui_focus(struct dt_iop_module_t *self, gboolean in)
 static void _auto_set_illuminant(dt_iop_module_t *self,
                                  dt_dev_pixelpipe_t *pipe)
 {
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
-  dt_iop_channelmixer_rgb_params_t *p =
-    (dt_iop_channelmixer_rgb_params_t *)self->params;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
+  dt_iop_channelmixer_rgb_params_t *p = self->params;
 
   // capture gui color picked event.
   if(self->picked_color_max[0] < self->picked_color_min[0]) return;
@@ -4577,7 +4530,7 @@ void gui_init(struct dt_iop_module_t *self)
   dt_gui_new_collapsible_section
     (&g->csspot,
      "plugins/darkroom/channelmixerrgb/expand_picker_mapping",
-     _("area color mapping"),
+     _area_mapping_section_text(g),
      GTK_BOX(self->widget),
      DT_ACTION(self));
 
@@ -4685,6 +4638,7 @@ void gui_init(struct dt_iop_module_t *self)
   gtk_box_pack_start(GTK_BOX(hhbox), GTK_WIDGET(vvbox), TRUE, TRUE, DT_BAUHAUS_SPACE);
 
   gtk_box_pack_start(GTK_BOX(g->csspot.container), GTK_WIDGET(hhbox), FALSE, FALSE, 0);
+  dt_gui_collapsible_section_set_label(&g->csspot, _area_mapping_section_text(g));
 
   GtkWidget *first, *second, *third;
 #define NOTEBOOK_PAGE(var, short, label, tooltip, section, swap, soft_range, sr_min, sr_max) \
@@ -4754,7 +4708,7 @@ void gui_init(struct dt_iop_module_t *self)
      _("choose the vendor and the type of your chart"),
      0, _checker_changed_callback, self,
      N_("Xrite ColorChecker 24 pre-2014"),
-     N_("Xrite ColorChecker 24 post-2014"),
+     N_("Xrite/Calibrite ColorChecker 24 post-2014"),
      N_("Datacolor SpyderCheckr 24 pre-2018"),
      N_("Datacolor SpyderCheckr 24 post-2018"),
      N_("Datacolor SpyderCheckr 48 pre-2018"),
@@ -4828,6 +4782,13 @@ void gui_init(struct dt_iop_module_t *self)
 
 void gui_cleanup(struct dt_iop_module_t *self)
 {
+  if(self && self->dev)
+  {
+    dt_dev_chroma_t *chr = &self->dev->chroma;
+    if(chr->adaptation == self)
+      chr->adaptation = NULL;
+  }
+
   self->request_color_pick = DT_REQUEST_COLORPICK_OFF;
   DT_DEBUG_CONTROL_SIGNAL_DISCONNECT
     (darktable.signals,
@@ -4836,8 +4797,7 @@ void gui_cleanup(struct dt_iop_module_t *self)
     (darktable.signals,
      G_CALLBACK(_preview_pipe_finished_callback), self);
 
-  dt_iop_channelmixer_rgb_gui_data_t *g =
-    (dt_iop_channelmixer_rgb_gui_data_t *)self->gui_data;
+  dt_iop_channelmixer_rgb_gui_data_t *g = self->gui_data;
   dt_conf_set_int("plugins/darkroom/channelmixerrgb/gui_page",
                   gtk_notebook_get_current_page (g->notebook));
 

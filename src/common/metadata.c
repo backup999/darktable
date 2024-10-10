@@ -50,7 +50,8 @@ static const struct
   {"Xmp.dc.rights", N_("rights"), DT_METADATA_TYPE_USER, 4},
   {"Xmp.acdsee.notes", N_("notes"), DT_METADATA_TYPE_USER, 5},
   {"Xmp.darktable.version_name", N_("version name"), DT_METADATA_TYPE_OPTIONAL, 6},
-  {"Xmp.darktable.image_id", N_("image id"), DT_METADATA_TYPE_INTERNAL, 7}
+  {"Xmp.darktable.image_id", N_("image id"), DT_METADATA_TYPE_INTERNAL, 7},
+  {"Xmp.xmpMM.PreservedFileName", N_("preserved filename"), DT_METADATA_TYPE_OPTIONAL, 8}
   // clang-format on
 };
 
@@ -322,7 +323,7 @@ static void _pop_undo(gpointer user_data,
   {
     for(GList *list = (GList *)data; list; list = g_list_next(list))
     {
-      dt_undo_metadata_t *undometadata = (dt_undo_metadata_t *)list->data;
+      dt_undo_metadata_t *undometadata = list->data;
 
       GList *before = (action == DT_ACTION_UNDO) ? undometadata->after : undometadata->before;
       GList *after = (action == DT_ACTION_UNDO) ? undometadata->before : undometadata->after;

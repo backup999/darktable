@@ -1,6 +1,6 @@
 /*
     This file is part of darktable,
-    Copyright (C) 2020-2023 darktable developers.
+    Copyright (C) 2020-2024 darktable developers.
 
     darktable is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -168,7 +168,7 @@ int write_image(dt_imageio_module_data_t *data, const char *filename, const void
   if(n_channels > 0)
     for(GList *iter = pipe->nodes; iter; iter = g_list_next(iter))
     {
-      dt_dev_pixelpipe_iop_t *piece = (dt_dev_pixelpipe_iop_t *)iter->data;
+      dt_dev_pixelpipe_iop_t *piece = iter->data;
 
       GHashTableIter rm_iter;
       gpointer key, value;
@@ -196,18 +196,24 @@ int write_image(dt_imageio_module_data_t *data, const char *filename, const void
         if(d->bpp == 8)
         {
           channel_data = malloc(sizeof(uint8_t) * d->global.width * d->global.height);
-          uint8_t *ch = (uint8_t *)channel_data;
-          DT_OMP_FOR_SIMD()
-          for(size_t i = 0; i < (size_t)d->global.width * d->global.height; ++i)
-            ch[i] = (uint8_t)roundf(CLIP(raster_mask[i]) * 255.0f);
+          if(channel_data)
+          {
+            uint8_t *ch = (uint8_t *)channel_data;
+            DT_OMP_FOR_SIMD()
+              for(size_t i = 0; i < (size_t)d->global.width * d->global.height; ++i)
+                ch[i] = (uint8_t)roundf(CLIP(raster_mask[i]) * 255.0f);
+          }
         }
         else if(d->bpp == 16)
         {
           channel_data = malloc(sizeof(uint16_t) * d->global.width * d->global.height);
-          uint16_t *ch = (uint16_t *)channel_data;
-          DT_OMP_FOR_SIMD()
-          for(size_t i = 0; i < (size_t)d->global.width * d->global.height; ++i)
-            ch[i] = (uint16_t)roundf(CLIP(raster_mask[i]) * 65535.0f);
+          if(channel_data)
+          {
+            uint16_t *ch = (uint16_t *)channel_data;
+            DT_OMP_FOR_SIMD()
+              for(size_t i = 0; i < (size_t)d->global.width * d->global.height; ++i)
+                ch[i] = (uint16_t)roundf(CLIP(raster_mask[i]) * 65535.0f);
+          }
         }
         else if(d->bpp == 32)
         {
@@ -215,7 +221,10 @@ int write_image(dt_imageio_module_data_t *data, const char *filename, const void
           free_channel_data = FALSE;
         }
 
-        xcf_add_data(xcf, channel_data, 1);
+        if(channel_data)
+          xcf_add_data(xcf, channel_data, 1);
+        else
+          dt_print(DT_DEBUG_ALWAYS, "[xcf] out of memory writing image data to %s\n", filename);
 
         if(free_channel_data)
           free(channel_data);
@@ -259,7 +268,7 @@ int set_params(dt_imageio_module_format_t *self, const void *params, int size)
 {
   if(size != params_size(self)) return 1;
   const dt_imageio_xcf_t *d = (dt_imageio_xcf_t *)params;
-  const dt_imageio_xcf_gui_t *g = (dt_imageio_xcf_gui_t *)self->gui_data;
+  const dt_imageio_xcf_gui_t *g = self->gui_data;
 
   if(d->bpp == 16)
     dt_bauhaus_combobox_set(g->bpp, 1);
@@ -362,7 +371,7 @@ void gui_cleanup(dt_imageio_module_format_t *self)
 
 void gui_reset(dt_imageio_module_format_t *self)
 {
-  dt_imageio_xcf_gui_t *gui = (dt_imageio_xcf_gui_t *)self->gui_data;
+  dt_imageio_xcf_gui_t *gui = self->gui_data;
   dt_bauhaus_combobox_set(gui->bpp, 2); // bpp = 32
 }
 

@@ -1,6 +1,6 @@
 /*
     This file is part of darktable,
-    Copyright (C) 2017-2023 darktable developers.
+    Copyright (C) 2017-2024 darktable developers.
 
     darktable is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -208,7 +208,7 @@ static void _undo_do_undo_redo(dt_undo_t *self,
 
   for(GList *l = *from; l; l = g_list_next(l))
   {
-    dt_undo_item_t *item = (dt_undo_item_t *)l->data;
+    dt_undo_item_t *item = l->data;
 
     if(item->type & filter)
     {
@@ -294,12 +294,18 @@ static void _undo_do_undo_redo(dt_undo_t *self,
 
 void dt_undo_do_redo(dt_undo_t *self, const uint32_t filter)
 {
+  dt_gui_cursor_set_busy();
+  dt_gui_process_events();
   _undo_do_undo_redo(self, filter, DT_ACTION_REDO);
+  dt_gui_cursor_clear_busy();
 }
 
 void dt_undo_do_undo(dt_undo_t *self, const uint32_t filter)
 {
+  dt_gui_cursor_set_busy();
+  dt_gui_process_events();
   _undo_do_undo_redo(self, filter, DT_ACTION_UNDO);
+  dt_gui_cursor_clear_busy();
 }
 
 static void _undo_clear_list(GList **list, const uint32_t filter)
@@ -309,7 +315,7 @@ static void _undo_clear_list(GList **list, const uint32_t filter)
   GList *next;
   for(GList *l = *list; l; l = next)
   {
-    dt_undo_item_t *item = (dt_undo_item_t *)l->data;
+    dt_undo_item_t *item = l->data;
     next = g_list_next(l); // get next node now, because we may delete the current one
     if(item->type & filter)
     {
@@ -346,7 +352,7 @@ static void _undo_iterate(GList *list,
   // check for first item that is matching the given pattern
   for(GList *l = list; l; l = g_list_next(l))
   {
-    dt_undo_item_t *item = (dt_undo_item_t *)l->data;
+    dt_undo_item_t *item = l->data;
     if(!item->is_group && (item->type & filter))
     {
       apply(user_data, item->type, item->data);

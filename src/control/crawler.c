@@ -1,6 +1,6 @@
 /*
     This file is part of darktable,
-    Copyright (C) 2014-2023 darktable developers.
+    Copyright (C) 2014-2024 darktable developers.
 
     darktable is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -31,10 +31,13 @@
 #include "control/control.h"
 #include "crawler.h"
 #include "gui/gtk.h"
+#include "gui/splash.h"
 #ifdef GDK_WINDOWING_QUARTZ
 #include "osx/osx.h"
 #endif
 
+// how many seconds may the sidecar file's timestamp differ from that recorded in the database?
+#define MAX_TIME_SKEW 2
 
 typedef enum dt_control_crawler_cols_t
 {
@@ -109,6 +112,17 @@ GList *dt_control_crawler_run(void)
   GList *result = NULL;
   gboolean look_for_xmp = (dt_image_get_xmp_mode() != DT_WRITE_XMP_NEVER);
 
+  int total_images = 1;
+  // clang-format off
+  DT_DEBUG_SQLITE3_PREPARE_V2(dt_database_get(darktable.db),
+                              "SELECT COUNT(*) FROM main.images", -1, &stmt, 0);
+  // clang-format on
+  if(sqlite3_step(stmt) == SQLITE_ROW)
+  {
+    total_images = sqlite3_column_int(stmt, 0);
+    sqlite3_finalize(stmt);
+  }
+
   // clang-format off
   sqlite3_prepare_v2(dt_database_get(darktable.db),
                      "SELECT i.id, write_timestamp, version,"
@@ -117,13 +131,17 @@ GList *dt_control_crawler_run(void)
                      " ON i.film_id = f.id"
                      " ORDER BY f.id, filename",
                      -1, &stmt, NULL);
-  // clang-format on
   sqlite3_prepare_v2(dt_database_get(darktable.db),
                      "UPDATE main.images SET flags = ?1 WHERE id = ?2", -1,
                      &inner_stmt, NULL);
+  // clang-format on
 
   // let's wrap this into a transaction, it might make it a little faster.
   dt_database_start_transaction(darktable.db);
+
+  int image_count = 0;
+  double start_time = dt_get_wtime();
+  double last_time = start_time - 0.99; // wait 10ms before first update to ensure visibility
 
   while(sqlite3_step(stmt) == SQLITE_ROW)
   {
@@ -132,6 +150,17 @@ GList *dt_control_crawler_run(void)
     const int version = sqlite3_column_int(stmt, 2);
     const gchar *image_path = (char *)sqlite3_column_text(stmt, 3);
     int flags = sqlite3_column_int(stmt, 4);
+
+    // update the progress message once per second
+    double fraction = (++image_count) / (double)total_images;
+    double curr_time = dt_get_wtime();
+    if(curr_time >= last_time + 1.0)
+    {
+      darktable_splash_screen_set_progress_percent(_("checking for updated sidecar files (%d%%)"),
+                                                   fraction,
+                                                   curr_time - start_time);
+      last_time = curr_time;
+    }
 
     // if the image is missing we ignore it.
     if(!g_file_test(image_path, G_FILE_TEST_EXISTS))
@@ -176,8 +205,7 @@ GList *dt_control_crawler_run(void)
       if(stat_res) continue; // TODO: shall we report these?
 
       // step 1: check if the xmp is newer than our db entry
-      // FIXME: allow for a few seconds difference?
-      if(timestamp < statbuf.st_mtime)
+      if(timestamp + MAX_TIME_SKEW < statbuf.st_mtime)
       {
         dt_control_crawler_result_t *item
             = (dt_control_crawler_result_t *)malloc(sizeof(dt_control_crawler_result_t));
@@ -202,55 +230,58 @@ GList *dt_control_crawler_run(void)
     len = c - image_path + 1;
 
     char *extra_path = (char *)calloc(len + 3 + 1, sizeof(char));
-    g_strlcpy(extra_path, image_path, len + 1);
-
-    extra_path[len] = 't';
-    extra_path[len + 1] = 'x';
-    extra_path[len + 2] = 't';
-    gboolean has_txt = g_file_test(extra_path, G_FILE_TEST_EXISTS);
-
-    if(!has_txt)
+    if(extra_path)
     {
-      extra_path[len] = 'T';
-      extra_path[len + 1] = 'X';
-      extra_path[len + 2] = 'T';
-      has_txt = g_file_test(extra_path, G_FILE_TEST_EXISTS);
+      g_strlcpy(extra_path, image_path, len + 1);
+
+      extra_path[len] = 't';
+      extra_path[len + 1] = 'x';
+      extra_path[len + 2] = 't';
+      gboolean has_txt = g_file_test(extra_path, G_FILE_TEST_EXISTS);
+
+      if(!has_txt)
+      {
+        extra_path[len] = 'T';
+        extra_path[len + 1] = 'X';
+        extra_path[len + 2] = 'T';
+        has_txt = g_file_test(extra_path, G_FILE_TEST_EXISTS);
+      }
+
+      extra_path[len] = 'w';
+      extra_path[len + 1] = 'a';
+      extra_path[len + 2] = 'v';
+      gboolean has_wav = g_file_test(extra_path, G_FILE_TEST_EXISTS);
+
+      if(!has_wav)
+      {
+        extra_path[len] = 'W';
+        extra_path[len + 1] = 'A';
+        extra_path[len + 2] = 'V';
+        has_wav = g_file_test(extra_path, G_FILE_TEST_EXISTS);
+      }
+
+      // TODO: decide if we want to remove the flag for images that lost
+      // their extra file. currently we do (the else cases)
+      int new_flags = flags;
+      if(has_txt)
+        new_flags |= DT_IMAGE_HAS_TXT;
+      else
+        new_flags &= ~DT_IMAGE_HAS_TXT;
+      if(has_wav)
+        new_flags |= DT_IMAGE_HAS_WAV;
+      else
+        new_flags &= ~DT_IMAGE_HAS_WAV;
+      if(flags != new_flags)
+      {
+        sqlite3_bind_int(inner_stmt, 1, new_flags);
+        sqlite3_bind_int(inner_stmt, 2, id);
+        sqlite3_step(inner_stmt);
+        sqlite3_reset(inner_stmt);
+        sqlite3_clear_bindings(inner_stmt);
+      }
+
+      free(extra_path);
     }
-
-    extra_path[len] = 'w';
-    extra_path[len + 1] = 'a';
-    extra_path[len + 2] = 'v';
-    gboolean has_wav = g_file_test(extra_path, G_FILE_TEST_EXISTS);
-
-    if(!has_wav)
-    {
-      extra_path[len] = 'W';
-      extra_path[len + 1] = 'A';
-      extra_path[len + 2] = 'V';
-      has_wav = g_file_test(extra_path, G_FILE_TEST_EXISTS);
-    }
-
-    // TODO: decide if we want to remove the flag for images that lost
-    // their extra file. currently we do (the else cases)
-    int new_flags = flags;
-    if(has_txt)
-      new_flags |= DT_IMAGE_HAS_TXT;
-    else
-      new_flags &= ~DT_IMAGE_HAS_TXT;
-    if(has_wav)
-      new_flags |= DT_IMAGE_HAS_WAV;
-    else
-      new_flags &= ~DT_IMAGE_HAS_WAV;
-    if(flags != new_flags)
-    {
-      sqlite3_bind_int(inner_stmt, 1, new_flags);
-      sqlite3_bind_int(inner_stmt, 2, id);
-      sqlite3_step(inner_stmt);
-      sqlite3_reset(inner_stmt);
-      sqlite3_clear_bindings(inner_stmt);
-    }
-
-    free(extra_path);
   }
 
   dt_database_release_transaction(darktable.db);
@@ -668,8 +699,7 @@ void dt_control_crawler_show_image_list(GList *images)
 {
   if(!images) return;
 
-  dt_control_crawler_gui_t *gui =
-    (dt_control_crawler_gui_t *)malloc(sizeof(dt_control_crawler_gui_t));
+  dt_control_crawler_gui_t *gui = malloc(sizeof(dt_control_crawler_gui_t));
 
   // a list with all the images
   GtkTreeViewColumn *column;
@@ -844,15 +874,25 @@ void dt_control_crawler_show_image_list(GList *images)
 
 static inline gboolean _lighttable_silent(void)
 {
-  return dt_view_get_current() == DT_VIEW_LIGHTTABLE
-      && dt_get_wtime() > darktable.backthumbs.time;
+  const dt_view_t *cv = darktable.view_manager
+                        ? dt_view_manager_get_current_view(darktable.view_manager)
+                        : NULL;
+  return cv
+        && cv->view
+        && cv->view(cv) == DT_VIEW_LIGHTTABLE
+        && dt_get_wtime() > darktable.backthumbs.time;
+}
+
+static inline gboolean _valid_mip(dt_mipmap_size_t mip)
+{
+  return mip > DT_MIPMAP_0 && mip < DT_MIPMAP_8;
 }
 
 static inline gboolean _still_thumbing(void)
 {
   return darktable.backthumbs.running
       && _lighttable_silent()
-      && darktable.backthumbs.mipsize != DT_MIPMAP_NONE;
+      && _valid_mip(darktable.backthumbs.mipsize);
 }
 
 static void _update_img_thumbs(const dt_imgid_t imgid,
@@ -943,6 +983,7 @@ static void _reinitialize_thumbs_database(void)
   sqlite3_step(stmt);
   sqlite3_finalize(stmt);
   darktable.backthumbs.service = FALSE;
+  dt_set_backthumb_time(5.0);
 }
 
 /* public */
@@ -965,7 +1006,7 @@ void dt_update_thumbs_thread(void *p)
   const gboolean dwriting = dt_conf_get_bool("cache_disk_backend");
   bt->mipsize = dt_mipmap_cache_get_min_mip_from_pref(dt_conf_get_string_const("backthumbs_mipsize"));
   bt->service = FALSE;
-  if(!dwriting || bt->mipsize == DT_MIPMAP_NONE)
+  if(!dwriting || !_valid_mip(bt->mipsize) || !darktable.view_manager)
   {
     bt->running = FALSE;
     dt_print(DT_DEBUG_CACHE, "[thumb crawler] closing due to preferences setting\n");
@@ -973,7 +1014,6 @@ void dt_update_thumbs_thread(void *p)
   }
   bt->running = TRUE;
 
-  dt_set_backthumb_time(5.0);
   int updated = 0;
 
   // return if any thumbcache dir is not writable
@@ -988,6 +1028,7 @@ void dt_update_thumbs_thread(void *p)
     }
   }
 
+  dt_set_backthumb_time(5.0);
   while(bt->running)
   {
     for(int i = 0; i < 12 && bt->running && !bt->service; i++)
@@ -999,10 +1040,10 @@ void dt_update_thumbs_thread(void *p)
     if(bt->service)
       _reinitialize_thumbs_database();
 
-    if(_lighttable_silent() && bt->mipsize != DT_MIPMAP_NONE)
+    if(_lighttable_silent() && _valid_mip(bt->mipsize))
       updated += _update_all_thumbs(bt->mipsize);
 
-    if(bt->mipsize == DT_MIPMAP_NONE)
+    if(!_valid_mip(bt->mipsize))
       bt->running = FALSE;
   }
   dt_print(DT_DEBUG_CACHE, "[thumb crawler] closing, %d mipmaps updated\n", updated);

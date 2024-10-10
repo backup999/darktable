@@ -129,6 +129,7 @@ FILE(GLOB SOURCE_FILES
   "dtgtk/range.c"
   "dtgtk/resetlabel.c"
   "dtgtk/sidepanel.c"
+  "dtgtk/stylemenu.c"
   "dtgtk/thumbnail.c"
   "dtgtk/thumbnail_btn.c"
   "dtgtk/thumbtable.c"
@@ -143,6 +144,7 @@ FILE(GLOB SOURCE_FILES
   "gui/import_metadata.c"
   "gui/preferences.c"
   "gui/presets.c"
+  "gui/splash.c"
   "gui/styles_dialog.c"
   "imageio/imageio.c"
   "imageio/imageio_gm.c"
@@ -484,7 +486,7 @@ if(USE_OPENJPEG)
     list(APPEND SOURCES "imageio/imageio_j2k.c")
     include_directories(SYSTEM ${OPENJPEG_INCLUDE_DIRS})
     list(APPEND LIBS ${OPENJPEG_LIBRARIES})
-    set(DT_SUPPORTED_EXTENSIONS ${DT_SUPPORTED_EXTENSIONS} j2c j2k jp2 jpc CACHE INTERNAL "")
+    set(DT_SUPPORTED_EXTENSIONS ${DT_SUPPORTED_EXTENSIONS} j2c j2k jp2 jpc jpf jpx CACHE INTERNAL "")
   endif(OpenJPEG_FOUND)
 endif(USE_OPENJPEG)
 
@@ -557,7 +559,7 @@ if(USE_GRAPHICSMAGICK)
   find_package(GraphicsMagick)
   if(GraphicsMagick_FOUND)
     add_definitions(-DHAVE_GRAPHICSMAGICK)
-    set(DT_SUPPORTED_EXTENSIONS ${DT_SUPPORTED_EXTENSIONS} bmp dcm fit fits fts gif jng jp2 jpc miff mng pam webp jxl CACHE INTERNAL "")
+    set(DT_SUPPORTED_EXTENSIONS ${DT_SUPPORTED_EXTENSIONS} bmp dcm fit fits fts gif jng jp2 jpc jpf jpx miff mng pam webp jxl CACHE INTERNAL "")
     include_directories(SYSTEM ${GraphicsMagick_INCLUDE_DIRS})
     list(APPEND LIBS ${GraphicsMagick_LIBRARIES})
   endif(GraphicsMagick_FOUND)
@@ -579,7 +581,7 @@ if(USE_IMAGEMAGICK AND NOT GraphicsMagick_FOUND)
       list(APPEND LIBS ${ImageMagick_LIBRARY})
       unset(ImageMagick_LIBRARY CACHE)
     endforeach(lib)
-    set(DT_SUPPORTED_EXTENSIONS ${DT_SUPPORTED_EXTENSIONS} bmp dcm fit fits fts gif jng jp2 jpc miff mng pam webp jxl CACHE INTERNAL "")
+    set(DT_SUPPORTED_EXTENSIONS ${DT_SUPPORTED_EXTENSIONS} bmp dcm fit fits fts gif jng jp2 jpc jpf jpx miff mng pam webp jxl CACHE INTERNAL "")
   endif(ImageMagick_FOUND)
 endif(USE_IMAGEMAGICK AND NOT GraphicsMagick_FOUND)
 
@@ -746,6 +748,7 @@ if(USE_LUA)
       "lua/styles.c"
       "lua/tags.c"
       "lua/types.c"
+      "lua/util.c"
       "lua/view.c"
       "lua/widget/box.c"
       "lua/widget/button.c"
@@ -770,7 +773,7 @@ endif(USE_LUA)
 
 if(USE_LUA)
   if(NOT Lua54_FOUND)
-    list(APPEND LIB_DEPS lua) # 2nd half of the uglyness :/
+    list(APPEND LIB_DEPS lua) # 2nd half of the ugliness :/
   endif(NOT Lua54_FOUND)
   # liblautoc for lua automated interface generation
   add_library(lautoc_static STATIC IMPORTED)

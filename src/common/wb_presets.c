@@ -1,4 +1,22 @@
 /*
+    This file is part of darktable,
+    Copyright (C) 2013-2024 darktable developers.
+
+    darktable is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    darktable is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with darktable.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+/*
  * UFRaw - Unidentified Flying Raw converter for digital camera images
  *
  * wb_presets.c - White balance preset values for various cameras
@@ -106,6 +124,12 @@ dt_wb_data *dt_wb_preset(const int k)
 void dt_wb_presets_init(const char *alternative)
 {
   wb_presets = calloc(sizeof(dt_wb_data), wb_presets_size);
+  if(!wb_presets)
+  {
+    wb_presets_size = 0;
+    dt_print(DT_DEBUG_ALWAYS, "[wb_presets] out of memory while initializing\n");
+    return;
+  }
 
   // dt_wb_presets_w();
 
@@ -284,6 +308,7 @@ void dt_wb_presets_init(const char *alternative)
            wb_presets_count);
 
 end:
+  if(parser) g_object_unref(parser);
   if(reader) g_object_unref(reader);
   if(!valid) exit(1);
   return;

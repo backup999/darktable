@@ -155,8 +155,7 @@ int legacy_params(dt_iop_module_t *self,
     } dt_iop_lowpass_params_v1_t;
 
     const dt_iop_lowpass_params_v1_t *old = old_params;
-    dt_iop_lowpass_params_v4_t *new =
-      (dt_iop_lowpass_params_v4_t *)malloc(sizeof(dt_iop_lowpass_params_v4_t));
+    dt_iop_lowpass_params_v4_t *new = malloc(sizeof(dt_iop_lowpass_params_v4_t));
     new->order = old->order;
     new->radius = fabs(old->radius);
     new->contrast = old->contrast;
@@ -182,8 +181,7 @@ int legacy_params(dt_iop_module_t *self,
     } dt_iop_lowpass_params_v2_t;
 
     const dt_iop_lowpass_params_v2_t *old = old_params;
-    dt_iop_lowpass_params_v4_t *new =
-      (dt_iop_lowpass_params_v4_t *)malloc(sizeof(dt_iop_lowpass_params_v4_t));
+    dt_iop_lowpass_params_v4_t *new = malloc(sizeof(dt_iop_lowpass_params_v4_t));
     new->order = old->order;
     new->radius = fabs(old->radius);
     new->contrast = old->contrast;
@@ -210,8 +208,7 @@ int legacy_params(dt_iop_module_t *self,
     } dt_iop_lowpass_params_v3_t;
 
     const dt_iop_lowpass_params_v3_t *old = old_params;
-    dt_iop_lowpass_params_v4_t *new =
-      (dt_iop_lowpass_params_v4_t *)malloc(sizeof(dt_iop_lowpass_params_v4_t));
+    dt_iop_lowpass_params_v4_t *new = malloc(sizeof(dt_iop_lowpass_params_v4_t));
     new->order = old->order;
     new->radius = fabs(old->radius);
     new->contrast = old->contrast;
@@ -237,8 +234,8 @@ int process_cl(struct dt_iop_module_t *self,
                const dt_iop_roi_t *const roi_in,
                const dt_iop_roi_t *const roi_out)
 {
-  dt_iop_lowpass_data_t *d = (dt_iop_lowpass_data_t *)piece->data;
-  dt_iop_lowpass_global_data_t *gd = (dt_iop_lowpass_global_data_t *)self->global_data;
+  dt_iop_lowpass_data_t *d = piece->data;
+  dt_iop_lowpass_global_data_t *gd = self->global_data;
 
   cl_int err = DT_OPENCL_DEFAULT_ERROR;
   const int devid = piece->pipe->devid;
@@ -299,7 +296,7 @@ int process_cl(struct dt_iop_module_t *self,
   }
 
   err = DT_OPENCL_SYSMEM_ALLOCATION;
-  dev_tmp = dt_opencl_alloc_device(devid, width, height, sizeof(float) * 4);
+  dev_tmp = dt_opencl_duplicate_image(devid, dev_out);
   if(dev_tmp == NULL) goto error;
 
   dev_cm = dt_opencl_copy_host_to_device(devid, d->ctable, 256, 256, sizeof(float));
@@ -313,11 +310,6 @@ int process_cl(struct dt_iop_module_t *self,
 
   dev_lcoeffs = dt_opencl_copy_host_to_device_constant(devid, sizeof(float) * 3, d->lunbounded_coeffs);
   if(dev_lcoeffs == NULL) goto error;
-
-  size_t origin[] = { 0, 0, 0 };
-  size_t region[] = { width, height, 1 };
-  err = dt_opencl_enqueue_copy_image(devid, dev_out, dev_tmp, origin, origin, region);
-  if(err != CL_SUCCESS) goto error;
 
   err = dt_opencl_enqueue_kernel_2d_args(devid, gd->kernel_lowpass_mix, width, height,
     CLARG(dev_tmp), CLARG(dev_out), CLARG(width), CLARG(height), CLARG(saturation), CLARG(dev_cm),
@@ -342,7 +334,7 @@ void tiling_callback(struct dt_iop_module_t *self,
                      const dt_iop_roi_t *roi_out,
                      struct dt_develop_tiling_t *tiling)
 {
-  dt_iop_lowpass_data_t *d = (dt_iop_lowpass_data_t *)piece->data;
+  dt_iop_lowpass_data_t *d = piece->data;
 
   const float radius = fmax(0.1f, d->radius);
   const float sigma = radius * roi_in->scale / piece->iscale;
@@ -389,7 +381,7 @@ void process(struct dt_iop_module_t *self,
                                         ivoid, ovoid, roi_in, roi_out))
     return;
 
-  dt_iop_lowpass_data_t *data = (dt_iop_lowpass_data_t *)piece->data;
+  dt_iop_lowpass_data_t *data = piece->data;
   const float *const restrict in = (float *)ivoid;
   float *const out = (float *)ovoid;
 
@@ -469,7 +461,7 @@ void commit_params(struct dt_iop_module_t *self,
                    dt_dev_pixelpipe_iop_t *piece)
 {
   dt_iop_lowpass_params_t *p = (dt_iop_lowpass_params_t *)p1;
-  dt_iop_lowpass_data_t *d = (dt_iop_lowpass_data_t *)piece->data;
+  dt_iop_lowpass_data_t *d = piece->data;
   d->order = p->order;
   d->radius = p->radius;
   d->contrast = p->contrast;
@@ -573,7 +565,7 @@ void init_presets(dt_iop_module_so_t *self)
 
 void cleanup_global(dt_iop_module_so_t *module)
 {
-  dt_iop_lowpass_global_data_t *gd = (dt_iop_lowpass_global_data_t *)module->data;
+  dt_iop_lowpass_global_data_t *gd = module->data;
   dt_opencl_free_kernel(gd->kernel_lowpass_mix);
   free(module->data);
   module->data = NULL;

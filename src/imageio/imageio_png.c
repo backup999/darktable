@@ -130,6 +130,12 @@ gboolean dt_imageio_png_read_image(dt_imageio_png_t *png, void *out)
   }
 
   png_bytep *row_pointers = malloc(sizeof(png_bytep) * png->height);
+  if(!row_pointers)
+  {
+    fclose(png->f);
+    png_destroy_read_struct(&png->png_ptr, &png->info_ptr, NULL);
+    return FALSE;
+  }
 
   png_bytep row_pointer = (png_bytep)out;
   const size_t rowbytes = png_get_rowbytes(png->png_ptr, png->info_ptr);
@@ -155,7 +161,8 @@ dt_imageio_retval_t dt_imageio_open_png(dt_image_t *img, const char *filename, d
 {
   const char *ext = filename + strlen(filename);
   while(*ext != '.' && ext > filename) ext--;
-  if(strncmp(ext, ".png", 4) && strncmp(ext, ".PNG", 4)) return DT_IMAGEIO_LOAD_FAILED;
+  if(strncmp(ext, ".png", 4) && strncmp(ext, ".PNG", 4))
+    return DT_IMAGEIO_UNSUPPORTED_FORMAT;
   if(!img->exif_inited) (void)dt_exif_read(img, filename);
 
   dt_imageio_png_t image;
@@ -165,7 +172,7 @@ dt_imageio_retval_t dt_imageio_open_png(dt_image_t *img, const char *filename, d
 
 
   if(!dt_imageio_png_read_header(filename, &image))
-    return DT_IMAGEIO_LOAD_FAILED;
+    return DT_IMAGEIO_UNSUPPORTED_FORMAT;
 
   width = img->width = image.width;
   height = img->height = image.height;
@@ -197,7 +204,7 @@ dt_imageio_retval_t dt_imageio_open_png(dt_image_t *img, const char *filename, d
   {
     dt_free_align(buf);
     dt_print(DT_DEBUG_ALWAYS, "[png_open] could not read image `%s'\n", img->filename);
-    return DT_IMAGEIO_LOAD_FAILED;
+    return DT_IMAGEIO_FILE_CORRUPTED;
   }
 
   const size_t npixels = (size_t)width * height;
@@ -257,9 +264,11 @@ int dt_imageio_png_read_profile(const char *filename, uint8_t **out, dt_colorspa
   png_uint_32 proflen = 0;
   png_bytep profile;
 
-  if(!(filename && *filename)) return 0;
+  if(!(filename && *filename))
+    return 0;
 
-  if(dt_imageio_png_read_header(filename, &image) != 0) return 0;
+  if(!dt_imageio_png_read_header(filename, &image))
+    return 0;
 
   /* TODO: also add check for known cICP chunk read support once added to libpng */
 #ifdef PNG_STORE_UNKNOWN_CHUNKS_SUPPORTED
@@ -287,7 +296,8 @@ int dt_imageio_png_read_profile(const char *filename, uint8_t **out, dt_colorspa
      && png_get_iCCP(image.png_ptr, image.info_ptr, &name, NULL, &profile, &proflen) != 0)
   {
     *out = (uint8_t *)g_malloc(proflen);
-    memcpy(*out, profile, proflen);
+    if(*out)
+      memcpy(*out, profile, proflen);
   }
 #endif
 

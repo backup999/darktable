@@ -70,7 +70,7 @@ G_BEGIN_DECLS
 // version for current darktable cl kernels
 // this is reflected in the kernel directory and allows to
 // enforce a new kernel compilation cycle
-#define DT_OPENCL_KERNELS 3
+#define DT_OPENCL_KERNELS 5
 
 typedef enum dt_opencl_memory_t
 {
@@ -380,10 +380,17 @@ int dt_opencl_enqueue_kernel_2d_with_local(const int dev,
 /** call kernel with arguments! */
 #define dt_opencl_enqueue_kernel_2d_args(dev, kernel, w, h, ...) \
     dt_opencl_enqueue_kernel_2d_args_internal(dev, kernel, w, h, __VA_ARGS__, CLWRAP(SIZE_MAX, NULL))
+
+#define dt_opencl_enqueue_kernel_1d_args(dev, kernel, x, ...) \
+    dt_opencl_enqueue_kernel_1d_args_internal(dev, kernel, x, __VA_ARGS__, CLWRAP(SIZE_MAX, NULL))
+
 int dt_opencl_enqueue_kernel_2d_args_internal(const int dev,
                                               const int kernel,
                                               const size_t w,
                                               const size_t h, ...);
+int dt_opencl_enqueue_kernel_1d_args_internal(const int dev,
+                                              const int kernel,
+                                              const size_t x, ...);
 
 /** launch kernel with specified dimension and defined local size! */
 int dt_opencl_enqueue_kernel_ndim_with_local(const int dev,
@@ -580,6 +587,8 @@ int dt_opencl_get_image_height(cl_mem mem);
 
 int dt_opencl_get_image_element_size(cl_mem mem);
 
+void *dt_opencl_duplicate_image(const int devid, const cl_mem src);
+
 void dt_opencl_dump_pipe_pfm(const char* mod,
                              const int devid,
                              cl_mem img,
@@ -596,7 +605,7 @@ void dt_opencl_memory_statistics(int devid,
 gboolean dt_opencl_image_fits_device(const int devid,
                                      const size_t width,
                                      const size_t height,
-                                     const unsigned bpp,
+                                     const uint32_t bpp,
                                      const float factor,
                                      const size_t overhead);
 /** get available memory for the device */

@@ -33,11 +33,18 @@
 #include "imageio/imageio_common.h"
 
 #include <libxml/encoding.h>
+#include <libxml/parser.h>
 #include <libxml/xmlwriter.h>
 
+#include <dirent.h>
 #include <glib.h>
 #include <stdio.h>
 #include <string.h>
+
+#if defined (_WIN32)
+#include "win/getdelim.h"
+#include "win/scandir.h"
+#endif // defined (_WIN32)
 
 typedef struct
 {
@@ -101,14 +108,14 @@ static void _apply_style_shortcut_callback(dt_action_t *action)
   if(dt_view_get_current() == DT_VIEW_DARKROOM)
   {
     const dt_imgid_t imgid = GPOINTER_TO_INT(imgs->data);
+    g_list_free(imgs);
     dt_styles_apply_to_dev(action->label, imgid);
   }
   else
   {
-    dt_styles_apply_to_list(action->label, imgs, FALSE);
+    GList *styles = g_list_prepend(NULL, g_strdup(action->label));
+    dt_control_apply_styles(imgs, styles, FALSE);
   }
-
-  g_list_free(imgs);
 }
 
 static int32_t dt_styles_get_id_by_name(const char *name);
@@ -637,119 +644,6 @@ gboolean dt_styles_create_from_image(const char *name,
   return FALSE;
 }
 
-void dt_styles_apply_to_list(const char *name, const GList *list, gboolean duplicate)
-{
-  dt_gui_cursor_set_busy();
-  gboolean selected = FALSE;
-
-  /* write current history changes so nothing gets lost,
-     do that only in the darkroom as there is nothing to be saved
-     when in the lighttable (and it would write over current history stack) */
-  if(dt_view_get_current() == DT_VIEW_DARKROOM) dt_dev_write_history(darktable.develop);
-
-  const int mode = dt_conf_get_int("plugins/lighttable/style/applymode");
-  const gboolean is_overwrite = (mode == DT_STYLE_HISTORY_OVERWRITE);
-
-  /* for each selected image apply style */
-  dt_pthread_mutex_lock(&darktable.undo->mutex);
-  dt_undo_start_group(darktable.undo, DT_UNDO_LT_HISTORY);
-
-  dt_undo_lt_history_t *hist = NULL;
-
-  for(const GList *l = list; l; l = g_list_next(l))
-  {
-    const dt_imgid_t imgid = GPOINTER_TO_INT(l->data);
-    if(is_overwrite)
-    {
-      hist = dt_history_snapshot_item_init();
-      hist->imgid = imgid;
-      dt_history_snapshot_undo_create(hist->imgid, &hist->before, &hist->before_history_end);
-
-      dt_undo_disable_next(darktable.undo);
-      if(!duplicate) dt_history_delete_on_image_ext(imgid, FALSE, TRUE);
-    }
-
-    dt_styles_apply_to_image(name, duplicate, is_overwrite, imgid);
-
-    if(is_overwrite)
-    {
-      dt_history_snapshot_undo_create(hist->imgid, &hist->after, &hist->after_history_end);
-      dt_undo_record(darktable.undo, NULL, DT_UNDO_LT_HISTORY, (dt_undo_data_t)hist,
-                     dt_history_snapshot_undo_pop, dt_history_snapshot_undo_lt_history_data_free);
-    }
-
-    selected = TRUE;
-  }
-
-  dt_undo_end_group(darktable.undo);
-  dt_pthread_mutex_unlock(&darktable.undo->mutex);
-
-  DT_DEBUG_CONTROL_SIGNAL_RAISE(darktable.signals, DT_SIGNAL_TAG_CHANGED);
-
-  if(!selected)
-  {
-    dt_control_log(_("no image selected!"));
-  }
-  else
-  {
-    dt_control_log(_("style %s successfully applied!"), name);
-  }
-  dt_gui_cursor_clear_busy();
-}
-
-void dt_multiple_styles_apply_to_list(GList *styles,
-                                      const GList *list,
-                                      const gboolean duplicate)
-{
-  dt_gui_cursor_set_busy();
-  /* write current history changes so nothing gets lost,
-     do that only in the darkroom as there is nothing to be saved
-     when in the lighttable (and it would write over current history stack) */
-  if(dt_view_get_current() == DT_VIEW_DARKROOM)
-    dt_dev_write_history(darktable.develop);
-
-  if(g_list_is_empty(styles) && g_list_is_empty(list))
-  {
-    dt_control_log(_("no images nor styles selected!"));
-    return;
-  }
-  else if(g_list_is_empty(styles))
-  {
-    dt_control_log(_("no styles selected!"));
-    return;
-  }
-  else if(g_list_is_empty(list))
-  {
-    dt_control_log(_("no image selected!"));
-    return;
-  }
-
-  const int mode = dt_conf_get_int("plugins/lighttable/style/applymode");
-  const gboolean is_overwrite = (mode == DT_STYLE_HISTORY_OVERWRITE);
-
-  /* for each selected image apply style */
-  dt_undo_start_group(darktable.undo, DT_UNDO_LT_HISTORY);
-  for(const GList *l = list; l; l = g_list_next(l))
-  {
-    const dt_imgid_t imgid = GPOINTER_TO_INT(l->data);
-    if(is_overwrite && !duplicate)
-      dt_history_delete_on_image_ext(imgid, FALSE, TRUE);
-
-    for(GList *style = styles; style; style = g_list_next(style))
-    {
-      dt_styles_apply_to_image((char*)style->data, duplicate, is_overwrite, imgid);
-    }
-  }
-  dt_undo_end_group(darktable.undo);
-
-  DT_DEBUG_CONTROL_SIGNAL_RAISE(darktable.signals, DT_SIGNAL_TAG_CHANGED);
-
-  const guint styles_cnt = g_list_length(styles);
-  dt_control_log(ngettext("style successfully applied!",
-                          "styles successfully applied!", styles_cnt));
-  dt_gui_cursor_clear_busy();
-}
-
 void dt_styles_create_from_list(const GList *list)
 {
   gboolean selected = FALSE;
@@ -777,9 +671,10 @@ void dt_styles_apply_style_item(dt_develop_t *dev,
   {
     dt_iop_module_t *module = (dt_iop_module_t *)calloc(1, sizeof(dt_iop_module_t));
 
-    module->dev = dev;
+    if(module)
+      module->dev = dev;
 
-    if(dt_iop_load_module(module, mod_src->so, dev))
+    if(!module || dt_iop_load_module(module, mod_src->so, dev))
     {
       module = NULL;
       dt_print(DT_DEBUG_ALWAYS,
@@ -927,7 +822,7 @@ void _styles_apply_to_image_ext(const char *name,
         if(overwrite)
           dt_history_delete_on_image_ext(newimgid, FALSE, TRUE);
         else
-          dt_history_copy_and_paste_on_image(imgid, newimgid, FALSE, NULL, TRUE, TRUE);
+          dt_history_copy_and_paste_on_image(imgid, newimgid, FALSE, NULL, TRUE, TRUE, TRUE);
       }
     }
     else
@@ -1026,7 +921,7 @@ void _styles_apply_to_image_ext(const char *name,
 
     for(GList *l = si_list; l; l = g_list_next(l))
     {
-      dt_style_item_t *style_item = (dt_style_item_t *)l->data;
+      dt_style_item_t *style_item = l->data;
       dt_styles_apply_style_item(dev_dest, style_item, &modules_used, FALSE);
     }
 
@@ -1079,9 +974,6 @@ void _styles_apply_to_image_ext(const char *name,
                               dt_dev_modulegroups_get(darktable.develop));
     }
 
-    /* update xmp file */
-    dt_image_synch_xmp(newimgid);
-
     /* remove old obsolete thumbnails */
     dt_mipmap_cache_remove(darktable.mipmap_cache, newimgid);
     dt_image_update_final_size(newimgid);
@@ -1091,6 +983,9 @@ void _styles_apply_to_image_ext(const char *name,
       dt_image_set_aspect_ratio(newimgid, TRUE);
     else
       dt_image_reset_aspect_ratio(newimgid, TRUE);
+
+    /* update xmp file */
+    dt_image_synch_xmp(newimgid);
 
     /* redraw center view to update visible mipmaps */
     DT_DEBUG_CONTROL_SIGNAL_RAISE(darktable.signals,
@@ -1230,6 +1125,8 @@ GList *dt_styles_get_item_list(const char *name,
       // name of current item of style
       char iname[512] = { 0 };
       dt_style_item_t *item = calloc(1, sizeof(dt_style_item_t));
+      if(!item)
+        break;
 
       if(sqlite3_column_type(stmt, 0) == SQLITE_NULL)
         item->num = -1;
@@ -1308,7 +1205,7 @@ char *dt_styles_get_item_list_as_string(const char *name)
   GList *names = NULL;
   for(GList *items_iter = items; items_iter; items_iter = g_list_next(items_iter))
   {
-    dt_style_item_t *item = (dt_style_item_t *)items_iter->data;
+    dt_style_item_t *item = items_iter->data;
     names = g_list_prepend(names, g_strdup(item->name));
   }
   names = g_list_reverse(names);  // list was built in reverse order, so un-reverse it
@@ -1496,12 +1393,26 @@ static StylePluginData *dt_styles_style_plugin_new()
   return plugin;
 }
 
+static void dt_styles_style_plugin_free(void *plugin_)
+{
+  StylePluginData *plugin = plugin_;
+  if(plugin)
+  {
+    g_string_free(plugin->operation, TRUE);
+    g_string_free(plugin->op_params, TRUE);
+    g_string_free(plugin->blendop_params, TRUE);
+    g_string_free(plugin->multi_name, TRUE);
+    g_free(plugin);
+  }
+}
+
 static void dt_styles_style_data_free(StyleData *style, gboolean free_segments)
 {
   g_string_free(style->info->name, free_segments);
   g_string_free(style->info->description, free_segments);
   g_list_free_full(style->info->iop_list, g_free);
-  g_list_free(style->plugins);
+  g_free(style->info);
+  g_list_free_full(style->plugins, dt_styles_style_plugin_free);
   g_free(style);
 }
 
@@ -1635,13 +1546,13 @@ static void dt_style_plugin_save(StylePluginData *plugin, gpointer styleId)
   DT_DEBUG_SQLITE3_BIND_INT(stmt, 1, id);
   DT_DEBUG_SQLITE3_BIND_INT(stmt, 2, plugin->num);
   DT_DEBUG_SQLITE3_BIND_INT(stmt, 3, plugin->module);
-  DT_DEBUG_SQLITE3_BIND_TEXT(stmt, 4, plugin->operation->str, plugin->operation->len, SQLITE_TRANSIENT);
+  DT_DEBUG_SQLITE3_BIND_TEXT(stmt, 4, plugin->operation->str, plugin->operation->len, SQLITE_STATIC);
   //
   const char *param_c = plugin->op_params->str;
   const int param_c_len = strlen(param_c);
   int params_len = 0;
   unsigned char *params = dt_exif_xmp_decode(param_c, param_c_len, &params_len);
-  DT_DEBUG_SQLITE3_BIND_BLOB(stmt, 5, params, params_len, SQLITE_TRANSIENT);
+  DT_DEBUG_SQLITE3_BIND_BLOB(stmt, 5, params, params_len, SQLITE_STATIC);
   //
   DT_DEBUG_SQLITE3_BIND_INT(stmt, 6, plugin->enabled);
 
@@ -1650,18 +1561,19 @@ static void dt_style_plugin_save(StylePluginData *plugin, gpointer styleId)
   unsigned char *blendop_params = dt_exif_xmp_decode
     (plugin->blendop_params->str,
      strlen(plugin->blendop_params->str), &blendop_params_len);
-  DT_DEBUG_SQLITE3_BIND_BLOB(stmt, 7, blendop_params, blendop_params_len, SQLITE_TRANSIENT);
+  DT_DEBUG_SQLITE3_BIND_BLOB(stmt, 7, blendop_params, blendop_params_len, SQLITE_STATIC);
 
   DT_DEBUG_SQLITE3_BIND_INT(stmt, 8, plugin->blendop_version);
 
   DT_DEBUG_SQLITE3_BIND_INT(stmt, 9, plugin->multi_priority);
   DT_DEBUG_SQLITE3_BIND_TEXT(stmt, 10, plugin->multi_name->str,
-                             plugin->multi_name->len, SQLITE_TRANSIENT);
+                             plugin->multi_name->len, SQLITE_STATIC);
   DT_DEBUG_SQLITE3_BIND_INT(stmt, 11, plugin->multi_name_hand_edited);
 
   sqlite3_step(stmt);
   sqlite3_finalize(stmt);
   free(params);
+  free(blendop_params);
 }
 
 static void dt_style_save(StyleData *style)
@@ -1686,7 +1598,7 @@ void dt_styles_import_from_file(const char *style_path)
   FILE *style_file;
   StyleData *style;
   GMarkupParseContext *parser;
-  gchar buf[1024];
+  gchar buf[8192];
 
   style = dt_styles_style_data_new();
   parser = g_markup_parse_context_new(&dt_style_parser, 0, style, NULL);
@@ -1789,7 +1701,7 @@ void dt_init_styles_actions()
     dt_action_t *stl = dt_action_section(&darktable.control->actions_global, N_("styles"));
     for(GList *res_iter = result; res_iter; res_iter = g_list_next(res_iter))
     {
-      dt_style_t *style = (dt_style_t *)res_iter->data;
+      dt_style_t *style = res_iter->data;
       dt_action_register(stl, style->name, _apply_style_shortcut_callback, 0, 0);
     }
     g_list_free_full(result, dt_style_free);
@@ -1820,6 +1732,84 @@ dt_style_t *dt_styles_get_by_name(const char *name)
     sqlite3_finalize(stmt);
     return NULL;
   }
+}
+
+gchar *dt_get_style_name(const char *filename)
+{
+  gchar *bname = NULL;
+  xmlDoc *document = xmlReadFile(filename, NULL, XML_PARSE_NOBLANKS);
+  xmlNode *root = NULL;
+  if(document != NULL)
+    root = xmlDocGetRootElement(document);
+
+  if(document == NULL || root == NULL || xmlStrcmp(root->name, BAD_CAST "darktable_style"))
+  {
+    dt_print(DT_DEBUG_CONTROL,
+             "[styles] file %s is not a style file\n", filename);
+    if(document)
+      xmlFreeDoc(document);
+    return bname;
+  }
+
+  for(xmlNode *node = root->children->children; node; node = node->next)
+  {
+    if(node->type == XML_ELEMENT_NODE)
+    {
+      if(strcmp((char*)node->name, "name") == 0)
+      {
+        xmlChar *content = xmlNodeGetContent(node);
+        bname = g_strdup((char*)content);
+        xmlFree(content);
+        break;
+      }
+    }
+  }
+
+  // xml doc is not necessary after this point
+  xmlFreeDoc(document);
+
+  if(!bname){
+    dt_print(DT_DEBUG_CONTROL,
+             "[styles] file %s is a malformed style file\n", filename);
+  }
+  return bname;
+}
+
+static int _check_extension(const struct dirent *namestruct)
+{
+  const char *filename = namestruct->d_name;
+  if(!filename || !filename[0])
+    return 0;
+  const char *dot = g_strrstr(filename, ".");
+  if(!dot)
+    return 0;
+  char *ext = g_ascii_strdown(dot, -1);
+  int include = g_strcmp0(ext, ".dtstyle") == 0;
+  g_free(ext);
+  return include;
+}
+
+void dt_import_default_styles(const char *folder)
+{
+  struct dirent **entries;
+  const int numentries = scandir(folder, &entries, _check_extension, alphasort);
+  for(int i = 0; i < numentries; i++)
+  {
+    char *filename = g_build_filename(folder, entries[i]->d_name, NULL);
+    gchar *bname = dt_get_style_name(filename);
+    if(bname && !dt_styles_exists(bname))
+    {
+      if(darktable.gui)
+        dt_print(DT_DEBUG_ALWAYS,
+                 "[styles] importing default style '%s'\n", filename);
+      dt_styles_import_from_file(filename);
+    }
+    g_free(bname);
+    g_free(filename);
+    free(entries[i]);
+  }
+  if(numentries != -1)
+    free(entries);
 }
 
 // clang-format off

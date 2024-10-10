@@ -218,8 +218,7 @@ static void _image_set_monochrome_flag(const dt_imgid_t imgid,
 
       if(undo_on)
       {
-        dt_undo_monochrome_t *undomono =
-          (dt_undo_monochrome_t *)malloc(sizeof(dt_undo_monochrome_t));
+        dt_undo_monochrome_t *undomono = malloc(sizeof(dt_undo_monochrome_t));
         undomono->imgid = imgid;
         undomono->before = mask_bw;
         undomono->after = mask;
@@ -645,7 +644,7 @@ static void _pop_undo(gpointer user_data,
 
     for(GList *list = (GList *)data; list; list = g_list_next(list))
     {
-      dt_undo_geotag_t *undogeotag = (dt_undo_geotag_t *)list->data;
+      dt_undo_geotag_t *undogeotag = list->data;
       const dt_image_geoloc_t *geoloc =
         (action == DT_ACTION_UNDO) ? &undogeotag->before : &undogeotag->after;
 
@@ -671,7 +670,7 @@ static void _pop_undo(gpointer user_data,
 
     for(GList *list = (GList *)data; list; list = g_list_next(list))
     {
-      dt_undo_datetime_t *undodatetime = (dt_undo_datetime_t *)list->data;
+      dt_undo_datetime_t *undodatetime = list->data;
 
       _set_datetime(undodatetime->imgid, (action == DT_ACTION_UNDO)
                                          ? undodatetime->before : undodatetime->after);
@@ -1080,12 +1079,16 @@ void dt_image_flip(const dt_imgid_t imgid, const int32_t cw)
 */
 float dt_image_get_sensor_ratio(const struct dt_image_t *img)
 {
-  return (float)img->p_width / (float)img->p_height;
+  const float sw = img->p_width;
+  const float sh = img->p_height;
+  return sw > sh ? sw / sh : sh / sw;
 }
 
 void dt_image_set_raw_aspect_ratio(const dt_imgid_t imgid)
 {
   /* fetch image from cache */
+  if(!darktable.image_cache) return;
+
   dt_image_t *image = dt_image_cache_get(darktable.image_cache, imgid, 'w');
 
   /* set image aspect ratio */
@@ -1157,9 +1160,9 @@ void dt_image_reset_aspect_ratio(const dt_imgid_t imgid, const gboolean raise)
   /* set image aspect ratio */
   image->aspect_ratio = 0.f;
 
-  /* store */
+  /* store in db, but don't synch XMP */
   dt_image_cache_write_release_info(darktable.image_cache, image,
-                                    DT_IMAGE_CACHE_SAFE,
+                                    DT_IMAGE_CACHE_RELAXED,
                                     "dt_image_reset_aspect_ratio");
 
   if(raise && darktable.collection->params.sorts[DT_COLLECTION_SORT_ASPECT_RATIO])
@@ -1445,8 +1448,7 @@ static dt_imgid_t _image_duplicate_with_version(const dt_imgid_t imgid,
   {
     if(undo)
     {
-      dt_undo_duplicate_t *dupundo =
-        (dt_undo_duplicate_t *)malloc(sizeof(dt_undo_duplicate_t));
+      dt_undo_duplicate_t *dupundo = malloc(sizeof(dt_undo_duplicate_t));
       dupundo->orig_imgid = imgid;
       dupundo->version = newversion;
       dupundo->new_imgid = newid;
@@ -2106,6 +2108,7 @@ void dt_image_init(dt_image_t *img)
   memset(img->exif_flash, 0, sizeof(img->exif_flash));
   memset(img->exif_exposure_program, 0, sizeof(img->exif_exposure_program));
   memset(img->exif_metering_mode, 0, sizeof(img->exif_metering_mode));
+  memset(&img->exif_datetime_taken, 0, sizeof(img->exif_datetime_taken));
   memset(img->camera_maker, 0, sizeof(img->camera_maker));
   memset(img->camera_model, 0, sizeof(img->camera_model));
   memset(img->camera_alias, 0, sizeof(img->camera_alias));
@@ -2147,6 +2150,7 @@ void dt_image_init(dt_image_t *img)
       dt_mark_colormatrix_invalid(&img->adobe_XYZ_to_CAM[k][i]);
 
   img->job_flags = DT_IMAGE_JOB_NONE;
+  img->load_status = DT_IMAGEIO_OK;
 }
 
 void dt_image_refresh_makermodel(dt_image_t *img)
@@ -2622,7 +2626,7 @@ dt_imgid_t dt_image_copy_rename(const dt_imgid_t imgid,
         sqlite3_step(stmt);
         sqlite3_finalize(stmt);
 
-        dt_history_copy_and_paste_on_image(imgid, newid, FALSE, NULL, TRUE, TRUE);
+        dt_history_copy_and_paste_on_image(imgid, newid, FALSE, NULL, TRUE, TRUE, TRUE);
 
         dt_image_synch_xmp(newid);
 
@@ -2968,8 +2972,7 @@ static void _image_set_datetimes(const GList *img,
     const _datetime_t *datetime = &g_array_index(dtime, _datetime_t, i);
     if(undo_on)
     {
-      dt_undo_datetime_t *undodatetime =
-        (dt_undo_datetime_t *)malloc(sizeof(dt_undo_datetime_t));
+      dt_undo_datetime_t *undodatetime = malloc(sizeof(dt_undo_datetime_t));
       undodatetime->imgid = imgid;
       dt_image_get_datetime(imgid, undodatetime->before);
 
@@ -3012,8 +3015,7 @@ static void _image_set_datetime(const GList *img,
     const dt_imgid_t imgid = GPOINTER_TO_INT(imgs->data);
     if(undo_on)
     {
-      dt_undo_datetime_t *undodatetime =
-        (dt_undo_datetime_t *)malloc(sizeof(dt_undo_datetime_t));
+      dt_undo_datetime_t *undodatetime = malloc(sizeof(dt_undo_datetime_t));
       undodatetime->imgid = imgid;
       dt_image_get_datetime(imgid, undodatetime->before);
 
@@ -3169,30 +3171,46 @@ static int32_t _image_get_set_name_id(const char *table,
 
   char *query = g_strdup_printf("SELECT id"
                                 "  FROM main.%s"
-                                "  WHERE LOWER(name) = LOWER('%s')",
-                                table,
-                                name);
+                                "  WHERE LOWER(name) = LOWER(?1)",
+                                table);
 
   DT_DEBUG_SQLITE3_PREPARE_V2(dt_database_get(darktable.db),
-                              query, -1, &stmt, NULL);
+                                              query,
+                                              -1,
+                                              &stmt,
+                                              NULL);
+  DT_DEBUG_SQLITE3_BIND_TEXT(stmt,
+                             1,
+                             name,
+                             -1,
+                             SQLITE_TRANSIENT);
 
   int32_t id = -1;
 
   if(sqlite3_step(stmt) == SQLITE_ROW)
   {
-    id = sqlite3_column_int(stmt, 0);
+    id = sqlite3_column_int(stmt,
+                            0);
   }
   else
   {
     g_free(query);
     query = g_strdup_printf("INSERT"
                             "  INTO main.%s (name)"
-                            "  VALUES ('%s')",
-                            table,
-                            name);
+                            "  VALUES (?1)",
+                            table);
 
-    DT_DEBUG_SQLITE3_EXEC(dt_database_get(darktable.db),
-                          query, NULL, NULL, NULL);
+    DT_DEBUG_SQLITE3_PREPARE_V2(dt_database_get(darktable.db),
+                                                query,
+                                                -1,
+                                                &stmt,
+                                                NULL);
+    DT_DEBUG_SQLITE3_BIND_TEXT(stmt,
+                               1,
+                               name,
+                               -1,
+                               SQLITE_TRANSIENT);
+    sqlite3_step(stmt);
     id = dt_database_last_insert_rowid(darktable.db);
   }
 

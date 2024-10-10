@@ -1,6 +1,6 @@
 /*
     This file is part of darktable,
-    Copyright (C) 2021-2023 darktable developers.
+    Copyright (C) 2021-2024 darktable developers.
 
     darktable is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -62,6 +62,7 @@ dt_imageio_retval_t dt_imageio_open_heif(dt_image_t *img,
   err = heif_context_read_from_file(ctx, filename, NULL);
   if(err.code != heif_error_Ok)
   {
+    ret = DT_IMAGEIO_LOAD_FAILED;
     if(err.code == heif_error_Unsupported_feature && err.subcode == heif_suberror_Unsupported_codec)
     {
       /* we want to feedback this to the user, so output to stderr */
@@ -69,13 +70,14 @@ dt_imageio_retval_t dt_imageio_open_heif(dt_image_t *img,
                "[imageio_heif] Unsupported codec for `%s'. "
                "Check if your libheif is built with HEVC and/or AV1 decoding support.\n",
                filename);
+      ret = DT_IMAGEIO_UNSUPPORTED_FEATURE;
     }
     else if(err.code != heif_error_Unsupported_filetype && err.subcode != heif_suberror_No_ftyp_box)
     {
       /* print debug info only if genuine HEIF */
       dt_print(DT_DEBUG_IMAGEIO, "Failed to read HEIF file [%s]: %s\n", filename, err.message);
+      ret = DT_IMAGEIO_UNSUPPORTED_FORMAT;
     }
-    ret = DT_IMAGEIO_LOAD_FAILED;
     goto out;
   }
 
@@ -86,7 +88,7 @@ dt_imageio_retval_t dt_imageio_open_heif(dt_image_t *img,
     dt_print(DT_DEBUG_IMAGEIO,
              "No images found in HEIF file [%s]\n",
              filename);
-    ret = DT_IMAGEIO_LOAD_FAILED;
+    ret = DT_IMAGEIO_FILE_CORRUPTED;
     goto out;
   }
 
@@ -97,7 +99,7 @@ dt_imageio_retval_t dt_imageio_open_heif(dt_image_t *img,
     dt_print(DT_DEBUG_IMAGEIO,
              "Failed to read primary image from HEIF file [%s]\n",
              filename);
-    ret = DT_IMAGEIO_LOAD_FAILED;
+    ret = DT_IMAGEIO_UNSUPPORTED_FEATURE;
     goto out;
   }
 
@@ -112,19 +114,22 @@ dt_imageio_retval_t dt_imageio_open_heif(dt_image_t *img,
       if(exif_size > 4)
       {
         uint8_t *exif_data = g_malloc0(exif_size);
-        err = heif_image_handle_get_metadata(handle, exif_id, exif_data);
-        if(err.code == heif_error_Ok)
+        if(exif_data)
         {
-          const uint32_t exif_offset = exif_data[0] << 24
-                                     | exif_data[1] << 16
-                                     | exif_data[2] << 8
-                                     | exif_data[3];
-          if(exif_size > 4 + exif_offset)
-            dt_exif_read_from_blob(img,
-                                   exif_data + 4 + exif_offset,
-                                   exif_size - 4 - exif_offset);
+          err = heif_image_handle_get_metadata(handle, exif_id, exif_data);
+          if(err.code == heif_error_Ok)
+          {
+            const uint32_t exif_offset = exif_data[0] << 24
+              | exif_data[1] << 16
+              | exif_data[2] << 8
+              | exif_data[3];
+            if(exif_size > 4 + exif_offset)
+              dt_exif_read_from_blob(img,
+                                     exif_data + 4 + exif_offset,
+                                     exif_size - 4 - exif_offset);
+          }
+          g_free(exif_data);
         }
-        g_free(exif_data);
       }
     }
   }
@@ -156,6 +161,11 @@ dt_imageio_retval_t dt_imageio_open_heif(dt_image_t *img,
 #endif
 
   struct heif_decoding_options *decode_options = heif_decoding_options_alloc();
+  if(!decode_options)
+  {
+    ret = DT_IMAGEIO_LOAD_FAILED;
+    goto out;
+  }
   decode_options->ignore_transformations = TRUE;
   // Darktable only supports LITTLE_ENDIAN systems, so RRGGBB_LE should be fine
   err = heif_decode_image(handle,
@@ -169,7 +179,7 @@ dt_imageio_retval_t dt_imageio_open_heif(dt_image_t *img,
     dt_print(DT_DEBUG_IMAGEIO,
              "Failed to decode HEIF file [%s]\n",
              filename);
-    ret = DT_IMAGEIO_LOAD_FAILED;
+    ret = DT_IMAGEIO_FILE_CORRUPTED;
     goto out;
   }
 
@@ -257,8 +267,12 @@ dt_imageio_retval_t dt_imageio_open_heif(dt_image_t *img,
   if(icc_size)
   {
     img->profile = (uint8_t *)g_malloc0(icc_size);
-    heif_image_handle_get_raw_color_profile(handle, img->profile);
-    img->profile_size = icc_size;
+    if(img->profile)
+    {
+      err = heif_image_handle_get_raw_color_profile(handle, img->profile);
+      if(err.code == heif_error_Ok)
+        img->profile_size = icc_size;
+    }
   }
 
   img->loader = LOADER_HEIF;
@@ -380,6 +394,10 @@ int dt_imageio_heif_read_profile(const char *filename,
         goto out;
       }
       icc_data = (uint8_t *)g_malloc0(sizeof(uint8_t) * icc_size);
+      if(!icc_data)
+      {
+        goto out;
+      }
       err = heif_image_handle_get_raw_color_profile(handle, icc_data);
       if(err.code != heif_error_Ok)
       {

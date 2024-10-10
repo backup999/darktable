@@ -405,7 +405,8 @@ const char *dt_xmp_keys[]
         "Xmp.acdsee.notes",                   "Xmp.dc.creator",
         "Xmp.dc.publisher",                   "Xmp.dc.title",
         "Xmp.dc.description",                 "Xmp.dc.rights",
-        "Xmp.dc.format",                      "Xmp.xmpMM.DerivedFrom" };
+        "Xmp.dc.format",                      "Xmp.xmpMM.DerivedFrom",
+        "Xmp.xmpMM.PreservedFileName" };
 
 // The number of XmpBag XmpSeq keys that dt uses
 static const guint dt_xmp_keys_n = G_N_ELEMENTS(dt_xmp_keys);
@@ -1088,9 +1089,12 @@ static void _find_datetime_taken(Exiv2::ExifData &exifData,
                                  Exiv2::ExifData::const_iterator pos,
                                  char *exif_datetime_taken)
 {
+  // Note: We allow a longer "datetime original" field with an unnecessary
+  // trailing byte(s) due to buggy software that creates it.
+  // See https://github.com/darktable-org/darktable/issues/17389
   if((FIND_EXIF_TAG("Exif.Image.DateTimeOriginal")
       || FIND_EXIF_TAG("Exif.Photo.DateTimeOriginal"))
-     && pos->size() == DT_DATETIME_EXIF_LENGTH)
+     && pos->size() >= DT_DATETIME_EXIF_LENGTH)
   {
     _strlcpy_to_utf8(exif_datetime_taken, DT_DATETIME_EXIF_LENGTH, pos, exifData);
     if(FIND_EXIF_TAG("Exif.Photo.SubSecTimeOriginal")
@@ -3160,6 +3164,8 @@ static GList *_read_history_v1(const std::string &xmpPacket,
   for(pugi::xml_node operation_iter: operation.node().children())
   {
     history_entry_t *current_entry = (history_entry_t *)calloc(1, sizeof(history_entry_t));
+    if(!current_entry)
+       break;
     current_entry->blendop_version = 1; // default version in case it's not specified
     history_entries = g_list_append(history_entries, current_entry);
 
@@ -3261,10 +3267,13 @@ static GList *_read_history_v2(Exiv2::XmpData &xmpData,
       unsigned int length = g_list_length(history_entries);
       if(n > length)
       {
-        current_entry = (history_entry_t *)calloc(1, sizeof(history_entry_t));
-        current_entry->blendop_version = 1; // default version in case it's not specified
-        current_entry->iop_order = -1.0;
-        history_entries = g_list_append(history_entries, current_entry);
+        current_entry = (history_entry_t*)calloc(1, sizeof(history_entry_t));
+	if(current_entry)
+	{
+	  current_entry->blendop_version = 1; // default version in case it's not specified
+	  current_entry->iop_order = -1.0;
+	  history_entries = g_list_append(history_entries, current_entry);
+	}
       }
       else if(n < length)
       {
@@ -3417,8 +3426,9 @@ static GHashTable *_read_masks(Exiv2::XmpData &xmpData,
     {
       for(size_t i = 0; i < cnt; i++)
       {
-        mask_entry_t *entry = (mask_entry_t *)calloc(1, sizeof(mask_entry_t));
-
+        mask_entry_t *entry = (mask_entry_t*)calloc(1, sizeof(mask_entry_t));
+	if(!entry)
+	   break;
         entry->version = version;
         entry->mask_id = mask_id->toLong(i);
         entry->mask_type = mask_type->toLong(i);
@@ -3504,9 +3514,12 @@ static GList *_read_masks_v3(Exiv2::XmpData &xmpData,
       unsigned int length = g_list_length(history_entries);
       if(n > length)
       {
-        current_entry = (mask_entry_t *)calloc(1, sizeof(mask_entry_t));
-        current_entry->version = version;
-        history_entries = g_list_append(history_entries, current_entry);
+        current_entry = (mask_entry_t*)calloc(1, sizeof(mask_entry_t));
+	if(current_entry)
+	{
+          current_entry->version = version;
+	  history_entries = g_list_append(history_entries, current_entry);
+	}
       }
       else if(n < length)
       {
@@ -3939,29 +3952,32 @@ gboolean dt_exif_xmp_read(dt_image_t *img,
             "1e00000006000000cdcccc3e000000400000000000000000";
           const char *no_blend = "gz11eJxjYGBgkGAAgRNODGiAEV0AJ2iwh+CRyscOAAdeGQQ=";
 
-          history_entry_t *entry = (history_entry_t *)calloc(1, sizeof(history_entry_t));
-          entry->operation = g_strdup("highlights");
-          entry->enabled = TRUE;
-          entry->modversion = 4;
-          entry->params = dt_exif_xmp_decode(default_clip,
-                                             strlen(default_clip),
-                                             &entry->params_len);
-          entry->multi_name = g_strdup("");
-          entry->multi_name_hand_edited = FALSE;
-          entry->multi_priority = 0;
-          entry->blendop_version = 13;
-          entry->blendop_params = dt_exif_xmp_decode(no_blend,
-                                                     strlen(no_blend),
-                                                     &entry->blendop_params_len);
-          // We insert the module in second position, just after rawprepare.
-          // This is to ensure that history_end do include this module.
-          // Just adding one to history_end won't work if the history_end
-          // is not pointing to the last history item.
-          entry->num = 1;
-          entry->iop_order = -1;
+          history_entry_t *entry = (history_entry_t*)calloc(1, sizeof(history_entry_t));
+	  if(entry)
+	  {
+            entry->operation = g_strdup("highlights");
+	    entry->enabled = TRUE;
+	    entry->modversion = 4;
+	    entry->params = dt_exif_xmp_decode(default_clip,
+	                                       strlen(default_clip),
+	                                       &entry->params_len);
+	    entry->multi_name = g_strdup("");
+	    entry->multi_name_hand_edited = FALSE;
+	    entry->multi_priority = 0;
+	    entry->blendop_version = 13;
+	    entry->blendop_params = dt_exif_xmp_decode(no_blend,
+	                                               strlen(no_blend),
+	                                               &entry->blendop_params_len);
+	    // We insert the module in second position, just after rawprepare.
+	    // This is to ensure that history_end do include this module.
+	    // Just adding one to history_end won't work if the history_end
+	    // is not pointing to the last history item.
+	    entry->num = 1;
+	    entry->iop_order = -1;
 
-          add_to_history_end++;
-          history_entries = g_list_append(history_entries, entry);
+	    add_to_history_end++;
+	    history_entries = g_list_append(history_entries, entry);
+	  }
         }
     }
 

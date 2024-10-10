@@ -115,13 +115,11 @@ typedef struct dt_lib_module_t
   /** does gui need to be updated if visible */
   gboolean gui_uptodate;
 
-  GtkWidget *label;
   GtkWidget *arrow;
   GtkWidget *reset_button;
   GtkWidget *presets_button;
 
   gboolean pref_based_presets;
-  gboolean no_control_widgets;
 } dt_lib_module_t;
 
 typedef struct dt_lib_module_info_t
@@ -151,6 +149,8 @@ extern const struct dt_action_def_t dt_action_def_lib;
 
 /** return the plugin with the given name */
 dt_lib_module_t *dt_lib_get_module(const char *name);
+/** return the container the plugin should be located in active view*/
+uint32_t dt_lib_get_container(dt_lib_module_t *module);
 
 /** get the visible state of a plugin */
 gboolean dt_lib_is_visible(dt_lib_module_t *module);

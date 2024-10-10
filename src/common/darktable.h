@@ -406,6 +406,7 @@ typedef struct darktable_t
   char *cachedir;
   char *dump_pfm_module;
   char *dump_pfm_pipe;
+  char *dump_diff_pipe;
   char *tmp_directory;
   char *bench_module;
   dt_lua_state_t lua_state;
@@ -489,6 +490,14 @@ void dt_dump_pipe_pfm(const char *mod,
                       const gboolean input,
                       const char *pipe);
 
+void dt_dump_pipe_diff_pfm(const char *mod,
+                          const float *a,
+                          const float *b,
+                          const int width,
+                          const int height,
+                          const int ch,
+                          const char *pipe);
+
 void *dt_alloc_aligned(const size_t size);
 
 static inline void* dt_calloc_aligned(const size_t size)
@@ -536,6 +545,12 @@ static inline float *dt_calloc_align_float(const size_t nfloats)
   if(buf) memset(buf, 0, nfloats * sizeof(float));
   return (float*)__builtin_assume_aligned(buf, DT_CACHELINE_BYTES);
 }
+
+static inline gboolean dt_check_aligned(void *addr)
+{
+  return ((uintptr_t)addr & (DT_CACHELINE_BYTES - 1)) == 0;
+}
+
 size_t dt_round_size(const size_t size, const size_t alignment);
 
 #ifdef _WIN32

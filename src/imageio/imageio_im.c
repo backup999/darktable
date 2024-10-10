@@ -1,6 +1,6 @@
 /*
     This file is part of darktable,
-    Copyright (C) 2020-2023 darktable developers.
+    Copyright (C) 2020-2024 darktable developers.
 
     darktable is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -44,9 +44,9 @@
 static gboolean _supported_image(const gchar *filename)
 {
   const char *extensions_whitelist[] = { "tiff", "tif", "pbm", "pgm", "ppm", "pnm",
-                                         "webp", "jpc", "jp2", "bmp", "dcm", "jng",
-                                         "miff", "mng", "pam", "gif", "jxl", "fit",
-                                         "fits", "fts", NULL };
+                                         "webp", "jpc", "jp2", "jpf", "jpx", "bmp",
+                                         "miff", "dcm", "jng", "mng", "pam", "gif",
+                                         "fits", "fit", "fts", "jxl", NULL };
   gboolean supported = FALSE;
   char *ext = g_strrstr(filename, ".");
   if(!ext) return FALSE;
@@ -124,9 +124,12 @@ dt_imageio_retval_t dt_imageio_open_im(dt_image_t *img, const char *filename, dt
   if(profile_data == NULL) profile_data = (uint8_t *)MagickGetImageProfile(image, "icm", &profile_length);
   if(profile_data)
   {
-    img->profile_size = profile_length;
     img->profile = (uint8_t *)g_malloc0(profile_length);
-    memcpy(img->profile, profile_data, profile_length);
+    if(img->profile)
+    {
+      memcpy(img->profile, profile_data, profile_length);
+      img->profile_size = profile_length;
+    }
     MagickRelinquishMemory(profile_data);
   }
 

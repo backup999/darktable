@@ -41,7 +41,7 @@ dt_imageio_retval_t dt_imageio_open_avif(dt_image_t *img,
   // We shouldn't expect AVIF images in files with an extension other than .avif
   char *ext = g_strrstr(filename, ".");
   if(ext && g_ascii_strcasecmp(ext, ".avif"))
-    return DT_IMAGEIO_LOAD_FAILED;
+    return DT_IMAGEIO_UNSUPPORTED_FORMAT;
 
   dt_imageio_retval_t ret;
   avifImage *avif_image = avifImageCreateEmpty();
@@ -63,7 +63,7 @@ dt_imageio_retval_t dt_imageio_open_avif(dt_image_t *img,
   if(result != AVIF_RESULT_OK)
   {
     dt_print(DT_DEBUG_IMAGEIO, "[avif_open] failed to parse `%s': %s\n", filename, avifResultToString(result));
-    ret = DT_IMAGEIO_LOAD_FAILED;
+    ret = DT_IMAGEIO_FILE_CORRUPTED;
     goto out;
   }
 
@@ -218,8 +218,11 @@ dt_imageio_retval_t dt_imageio_open_avif(dt_image_t *img,
   if(icc->size && icc->data)
   {
     img->profile = (uint8_t *)g_malloc0(icc->size);
-    memcpy(img->profile, icc->data, icc->size);
-    img->profile_size = icc->size;
+    if(img->profile)
+    {
+      memcpy(img->profile, icc->data, icc->size);
+      img->profile_size = icc->size;
+    }
   }
 
   img->loader = LOADER_AVIF;
@@ -263,8 +266,11 @@ int dt_imageio_avif_read_profile(const char *filename, uint8_t **out, dt_colorsp
   if(icc->size && icc->data)
   {
     *out = (uint8_t *)g_malloc0(icc->size);
-    memcpy(*out, icc->data, icc->size);
-    size = icc->size;
+    if(*out)
+    {
+      memcpy(*out, icc->data, icc->size);
+      size = icc->size;
+    }
   }
   else
   {
